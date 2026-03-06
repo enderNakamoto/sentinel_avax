@@ -36,6 +36,8 @@ isRouteApproved(flightId, origin, destination) → bool
 getRouteTerms(flightId, origin, destination) → (premium, payoff)
 ```
 
+---
+
 ### RiskVault
 
 The capital backing layer. All underwriter USDC sits here.
@@ -56,15 +58,15 @@ The capital backing layer. All underwriter USDC sits here.
 - **Withdrawals are pull-based.** Once an underwriter's queued request is processed and
   credited, they call `collect()` to transfer their USDC. Credited balances are fixed USDC
   — they do not earn further yield while sitting uncollected.
-- Records daily share price snapshots via a `priceHistory` array. A snapshot is written at
-  most once per day, triggered by settlement activity. A standalone `snapshot()` function
-  callable by the Chainlink Automation keeper ensures snapshots are recorded even during
-  periods with no flight settlements.
+- Records daily share price snapshots via a `priceHistory` array. The CRE workflow calls
+  `snapshot()` at the end of every tick — a snapshot is written at most once per 24 hours.
 - A `previewRedeemFree(shares)` view returns the redemption value against free capital only,
-  giving underwriters a realistic picture of what they can withdraw immediately, as distinct
-  from `previewRedeem` which includes locked capital in the calculation.
+  giving underwriters a realistic picture of what they can withdraw immediately.
 - Only the Controller can call state-changing functions: `increaseLocked`, `decreaseLocked`,
-  `sendPayout`, `processWithdrawalQueue`.
+  `sendPayout`, `processWithdrawalQueue`, `recordPremiumIncome`.
+- `snapshot()` is callable by anyone — in practice the CRE workflow calls it every tick.
+
+---
 
 ### FlightPool
 
@@ -75,21 +77,22 @@ One contract deployed per flight+date. Holds traveler premiums for that specific
 - The `premium` and `payoff` used at deployment are read from the GovernanceModule at
   the moment of first purchase. Subsequent `updateRouteTerms()` calls do not affect
   an already-deployed pool.
-- Immutable after deployment — `premium` and `payoff` are fixed at construction and
-  cannot change after travelers have bought in.
+- Immutable after deployment — `premium` and `payoff` are fixed at construction.
 - On settlement, one of two outcomes:
-  - **Not delayed:** all collected premiums are transferred to RiskVault as yield.
+  - **Not delayed:** all collected premiums are transferred to RiskVault as yield via
+    `riskVault.recordPremiumIncome(amount)`.
   - **Delayed:** receives `payoff × buyerCount` USDC from RiskVault and marks the pool
     as claimable. Funds sit in the pool until each buyer pulls them out.
 - **Payouts are pull-based.** After a delayed settlement, each buyer calls `claim()` on
-  the FlightPool to collect their `payoff`. The pool tracks a `claimed` mapping per buyer
-  to prevent double claims.
+  the FlightPool to collect their `payoff`. A `claimed` mapping per buyer prevents double claims.
 - **Claim expiry.** Unclaimed payouts expire after a configurable window (default 60 days,
-  updatable by the owner). After expiry, unclaimed funds are swept to the RecoveryPool
-  by calling `sweepExpired()`. Buyers cannot claim after the expiry timestamp.
-- Failed per-buyer transfers during `settleDelayed` emit a `PayoutFailed(address buyer, uint256 amount)`
-  event so operators can identify and manually recover any stranded funds.
+  set by the Controller at settlement time). After expiry, unclaimed funds are swept to
+  the RecoveryPool by calling `sweepExpired()`. Buyers cannot claim after the expiry timestamp.
+- Per-buyer transfer failures in `settleDelayed` emit a `PayoutFailed(address buyer, uint256 amount)`
+  event and are skipped non-revertingly, so one bad address cannot block payouts to others.
 - Only the Controller can call `buyInsurance`, `closePool`, `settleNotDelayed`, `settleDelayed`.
+
+---
 
 ### Controller
 
@@ -105,16 +108,38 @@ Responsibilities:
 4. **Gate insurance purchases** behind a solvency check before every sale, and enforce a
    configurable `minimumLeadTime` before departure (default 1 hour).
 5. **Pull USDC premiums** from travelers and route them to the correct FlightPool.
-6. **Run the settlement loop** via `performUpkeep()` — query OracleAggregator, trigger
-   Chainlink Functions requests for Unknown flights, settle mature FlightPools, trigger
-   withdrawal queue processing after each settlement.
-7. **Clean up** settled flights from both the internal registry and the OracleAggregator.
-8. Caches `flightId` and `flightDate` in the `FlightRecord` struct to avoid external
+6. **Run the settlement loop** via `checkAndSettle()` — query OracleAggregator for each
+   active flight's current status and settle mature FlightPools. Unknown flights are skipped;
+   the CRE workflow has already written all final statuses before calling this function.
+7. **Trigger withdrawal queue processing** and share price snapshot after each settlement.
+8. **Clean up** settled flights from both the internal registry and the OracleAggregator.
+9. Caches `flightId` and `flightDate` in the `FlightRecord` struct to avoid external
    contract calls during the settlement loop.
-9. Maintains lifetime aggregate counters — `totalPoliciesSold`, `totalPremiumsCollected`,
-   and `totalPayoutsDistributed` — for frontend dashboards and analytics.
-10. Implements `AutomationCompatibleInterface` for Chainlink Automation compatibility.
+10. Maintains lifetime aggregate counters — `totalPoliciesSold`, `totalPremiumsCollected`,
+    and `totalPayoutsDistributed` — for frontend dashboards and analytics.
 11. Exposes `getActivePools()` for the frontend — returns all live pool addresses with metadata.
+
+**CRE access guard:**
+
+```solidity
+address public creWorkflowAddress; // set post-workflow-deployment via setCreWorkflow()
+
+modifier onlyCREWorkflow() {
+    require(msg.sender == creWorkflowAddress, "Controller: not CRE workflow");
+    _;
+}
+
+function checkAndSettle() external onlyCREWorkflow { ... }
+```
+
+There is no `AutomationCompatibleInterface`, no `checkUpkeep`, no `performUpkeep`, no
+`lastUpkeepTimestamp`, and no `s_forwarder`. The CRE cron trigger replaces all of that.
+
+`creWorkflowAddress` is set post-workflow-deployment via `setCreWorkflow(address)` (owner only).
+After deploying and activating the CRE workflow, read its forwarder/signer address from
+the CRE platform and call `controller.setCreWorkflow(workflowAddress)`.
+
+---
 
 ### OracleAggregator
 
@@ -122,41 +147,28 @@ An on-chain registry of flight statuses. The single source of truth for settleme
 
 - Stores the status of every currently-tracked flight: `Unknown → OnTime | Delayed | Cancelled`
 - Status is **append-only toward finality** — once a final status is recorded it cannot
-  be reversed or reset.
-- The `authorizedOracle` is set to the FunctionsConsumer contract address — not an EOA.
-  Only the FunctionsConsumer can push status updates.
+  be reversed or reset to `Unknown`.
+- The `authorizedOracle` is set to the CRE workflow's forwarder/signer address. Only the
+  CRE workflow can push status updates — no intermediate contract is involved.
 - Only the Controller can register and deregister flights.
 - `getFlightStatus()` never reverts — returns `Unknown` as a safe fallback for any
   unregistered flight, so a missing entry never breaks the settlement loop.
+- Exposes `getActiveFlights()` — returns the full array of currently registered flights.
+  The CRE workflow reads this at the start of each tick to know which flights to check.
 
-### FunctionsConsumer
-
-The Chainlink Functions client. Bridges the settlement loop to real-world flight APIs
-without a persistent off-chain service.
-
-- Inherits from Chainlink's `FunctionsClient`.
-- Holds the JavaScript source code that fetches flight status from external APIs.
-- `requestFlightStatus(flightId, date)` sends a Chainlink Functions request and records
-  the `requestId → (flightId, date)` mapping.
-- `fulfillRequest(requestId, response, err)` is the on-chain callback invoked by Chainlink
-  nodes after executing the JS source. It parses the response and calls
-  `OracleAggregator.updateFlightStatus()`.
-- Funded with LINK to pay for Chainlink Functions request costs.
-- Only the Controller can call `requestFlightStatus()`.
+---
 
 ### RecoveryPool
 
 A simple custody contract for expired, unclaimed traveler payouts.
 
-- When a FlightPool's claim window expires (60 days after delayed settlement by default),
-  anyone can call `FlightPool.sweepExpired()` which transfers all remaining unclaimed
-  USDC to the RecoveryPool.
-- The RecoveryPool holds funds on behalf of travelers who missed the claim window.
-  It maintains a record of which FlightPool the funds came from.
-- The **owner can withdraw** funds from the RecoveryPool at any time — intended for
-  manual resolution of legitimate late claims or other recovery scenarios.
-- The claim expiry window is a configurable parameter on the Controller, defaulting
-  to 60 days. The owner can update it and it applies to all future pool deployments.
+- When a FlightPool's claim window expires, anyone can call `FlightPool.sweepExpired()`
+  which transfers all remaining unclaimed USDC to the RecoveryPool.
+- The RecoveryPool records which FlightPool each deposit came from.
+- The **owner can withdraw** funds from the RecoveryPool at any time — intended for manual
+  resolution of legitimate late claims or other recovery scenarios.
+- The claim expiry window is a configurable parameter on the Controller (default 60 days),
+  passed to each FlightPool at settlement time.
 
 ---
 
@@ -215,40 +227,60 @@ Owner or Admin → GovernanceModule.disableRoute(flightId, origin, destination)
         new buyInsurance() calls for this route will revert at the approval check
 ```
 
-### Settlement Loop (via Chainlink Automation)
+### CRE Workflow Tick (every 10 minutes)
 
 ```
-Chainlink Automation → Controller.performUpkeep()
-    └─► Controller.checkAndSettle()
-              └─► for each active FlightPool:
-                        OracleAggregator.getFlightStatus(flightId, date)
-                        │
-                        ├─ Unknown   → FunctionsConsumer.requestFlightStatus(flightId, date)
-                        │                  └─► Chainlink nodes execute JS source
-                        │                      fetch flight API → fulfillRequest callback
-                        │                      OracleAggregator.updateFlightStatus(...)
-                        │                  status will be available on next tick
-                        │
-                        ├─ OnTime    → flightPool.settleNotDelayed()
-                        │                  └─► premiums → RiskVault (yield)
-                        │             riskVault.sendPayout() not called
-                        │             riskVault.decreaseLocked(liability)
-                        │             riskVault.processWithdrawalQueue()
-                        │             OracleAggregator.deregisterFlight(...)
-                        │
-                        └─ Delayed / Cancelled
-                                      → riskVault.sendPayout(pool, amount)
-                                        riskVault.decreaseLocked(liability)
-                                        flightPool.settleDelayed()
-                                            └─► pool marked claimable
-                                                claimExpiry set (now + 60 days)
-                                        riskVault.processWithdrawalQueue()
-                                            └─► credits claimableBalance per underwriter
-                                        OracleAggregator.deregisterFlight(...)
-                                        totalPayoutsDistributed += totalPayout
+CRE Cron Trigger fires
+    │
+    └─► workflow callback: onCronTick(runtime, trigger)
               │
-              └─► riskVault.snapshot()  ← daily price snapshot if interval elapsed
+              ├─► evmClient.read(OracleAggregator.getActiveFlights())
+              │       └─► returns array of { flightId, flightDate } for all registered flights
+              │
+              ├─► for each flight with status Unknown:
+              │       httpClient.get(AeroAPI, { headers: { x-apikey: secrets.AEROAPI_KEY } })
+              │           └─► response parsed:
+              │                 Landed + delay > 45 min → Delayed
+              │                 Landed + delay ≤ 45 min → OnTime
+              │                 Cancelled               → Cancelled
+              │                 Scheduled / En Route    → Unknown (skip, retry next tick)
+              │                 HTTP error / empty      → Unknown (skip, retry next tick)
+              │
+              ├─► for each flight that reached a final status:
+              │       evmClient.write(OracleAggregator.updateFlightStatus(flightId, date, status))
+              │           └─► append-only — status cannot regress once written
+              │
+              ├─► evmClient.write(Controller.checkAndSettle())
+              │       └─► for each active FlightPool:
+              │                 OracleAggregator.getFlightStatus(flightId, date)
+              │                 │
+              │                 ├─ Unknown   → skip (not yet final)
+              │                 │
+              │                 ├─ OnTime    → pool.closePool()
+              │                 │             pool.settleNotDelayed()
+              │                 │                 └─► all premiums → RiskVault (yield)
+              │                 │             riskVault.decreaseLocked(liability)
+              │                 │             riskVault.processWithdrawalQueue()
+              │                 │             OracleAggregator.deregisterFlight(...)
+              │                 │
+              │                 └─ Delayed / Cancelled
+              │                               → riskVault.sendPayout(pool, totalPayout)
+              │                                 riskVault.decreaseLocked(liability)
+              │                                 pool.closePool()
+              │                                 pool.settleDelayed(claimExpiryWindow)
+              │                                     └─► pool marked claimable
+              │                                         claimExpiry = now + claimExpiryWindow
+              │                                 riskVault.processWithdrawalQueue()
+              │                                 OracleAggregator.deregisterFlight(...)
+              │                                 totalPayoutsDistributed += totalPayout
+              │
+              └─► evmClient.write(RiskVault.snapshot())
+                      └─► no-op if already snapshotted within 24 hours
 ```
+
+Each capability call (HTTP, EVM read, EVM write) runs independently on every node in the
+Workflow DON and is aggregated via BFT consensus. A failed HTTP call leaves the flight as
+`Unknown` and it is retried automatically on the next tick.
 
 ### Traveler Claiming a Payout
 
@@ -316,23 +348,18 @@ If the check fails, the purchase reverts. There is no partial fulfilment.
                       GovernanceModule
                                │
                                ▼
-                          Controller
+                          Controller ◄─── CRE Workflow (onlyCREWorkflow)
                           │    │    │
               ┌───────────┘    │    └───────────┐
               ▼                ▼                ▼
-         RiskVault       FlightPool(s)   OracleAggregator
-                               │                ▲
-                               ▼                │
-                          RecoveryPool    FunctionsConsumer
-                                                ▲
-                                                │
-                                      Chainlink Functions Nodes
-                                                ▲
-                                                │
-                                           Flight APIs
-```
+         RiskVault       FlightPool(s)   OracleAggregator ◄─── CRE Workflow
+                               │                               (authorizedOracle)
+                               ▼
+                          RecoveryPool
 
-**Participants**
+CRE Workflow DON ──────────────────────────────► AeroAPI
+     (HTTP capability)
+```
 
 ```
   Underwriters ──────► RiskVault
@@ -355,32 +382,40 @@ If the check fails, the purchase reverts. There is no partial fulfilment.
 
 3. OracleAggregator
         no dependencies at deploy time
-        → Controller and FunctionsConsumer addresses set via one-time setters post-deployment
+        → Controller address set via one-time setter post-deployment
+        → CRE workflow address set as authorizedOracle via one-time setter post-deployment
 
-4. FunctionsConsumer
-        needs: OracleAggregator address, Chainlink Functions router address, DON ID
-        → fund with LINK after deployment
+4. RiskVault
+        needs: USDC address, Controller address
+        → deploy with a zero address placeholder for Controller
+        → wire real Controller address via one-time setter post-deployment
 
-5. RiskVault
-        needs: Controller address
-        → deploy with placeholder, set controller via one-time setter post-deployment
+5. Controller
+        needs: GovernanceModule, RiskVault, OracleAggregator, RecoveryPool, USDC addresses
+               minimumSolvencyRatio, minimumLeadTime, claimExpiryWindow
+        Note: creWorkflowAddress is NOT required at construction —
+              set post-workflow-deployment via setCreWorkflow()
 
-6. Controller
-        needs: GovernanceModule, RiskVault, OracleAggregator, FunctionsConsumer,
-               RecoveryPool addresses, Chainlink Automation registry address
+6. Post-deployment wiring (Solidity contracts)
+        OracleAggregator.setController(controller)      ← one-time, locks forever
+        RiskVault.setController(controller)             ← one-time, locks forever
 
-7. Post-deployment wiring
-        OracleAggregator.setController(controller)
-        OracleAggregator.setOracle(functionsConsumer)
-        RiskVault.setController(controller)
-        Register Controller upkeep in Chainlink Automation registry → fund with LINK
+7. CRE workflow deployment
+        Build TypeScript workflow with CRE SDK
+        Simulate locally: cre workflow simulate
+        Deploy to DON: cre workflow deploy ./dist/workflow.wasm
+        Activate: cre workflow activate <workflow-id>
+        Read the workflow's forwarder/signer address: cre workflow info <workflow-id>
+
+8. Wire CRE workflow address into Solidity contracts
+        OracleAggregator.setOracle(creWorkflowAddress)  ← one-time, locks forever
+        Controller.setCreWorkflow(creWorkflowAddress)    ← owner only, updatable
 ```
 
-**Note on the RiskVault / Controller circular dependency:**
-RiskVault needs the Controller address to enforce `onlyController`, and the Controller
-needs the RiskVault address. Deploy RiskVault first with a zero address placeholder,
-deploy the Controller, then call `RiskVault.setController(controller)` as a one-time
-post-deployment setter — mirroring the same pattern used by OracleAggregator.
+**RiskVault / Controller circular dependency:** RiskVault needs the Controller address to
+enforce `onlyController`, and the Controller needs the RiskVault address. Deploy RiskVault
+first with a zero address placeholder, deploy the Controller, then call
+`RiskVault.setController(controller)` as a one-time post-deployment setter.
 
 ---
 
@@ -388,22 +423,20 @@ post-deployment setter — mirroring the same pattern used by OracleAggregator.
 
 | Modifier | Enforced On | Meaning |
 |---|---|---|
-| `onlyOwner` | GovernanceModule | Manage admins |
+| `onlyOwner` | GovernanceModule | Manage admin whitelist |
 | `onlyOwnerOrAdmin` | GovernanceModule | `approveRoute`, `disableRoute`, `updateRouteTerms` |
-| `onlyOwner` | Controller | Start/stop keeper loop, update `claimExpiryWindow`, `minimumLeadTime`, `minimumSolvencyRatio` |
-| `onlyAutomationRegistry` | Controller | `performUpkeep` — only callable by Chainlink Automation registry |
+| `onlyOwner` | Controller | Update config values, `setCreWorkflow`, `setGovernanceModule` |
+| `onlyCREWorkflow` | Controller | `checkAndSettle()` — only callable by the registered CRE workflow address |
 | `onlyController` | RiskVault, FlightPool | All capital-moving and state-changing functions |
-| `onlyController` | FunctionsConsumer | `requestFlightStatus` |
 | `onlyOwner` | RecoveryPool | Withdraw recovered funds |
-| `authorizedOracle` (FunctionsConsumer) | OracleAggregator | `updateFlightStatus` |
+| `authorizedOracle` (CRE workflow) | OracleAggregator | `updateFlightStatus` |
 | `authorizedController` | OracleAggregator | `registerFlight`, `deregisterFlight` |
 
-The GovernanceModule address is set on the Controller at deployment and can be updated
-by the owner to swap in a more complex governance mechanism later without redeploying
-the Controller.
+The `authorizedController` and `authorizedOracle` addresses in OracleAggregator are set
+once after deployment and can never be changed.
 
-The `authorizedController` and `authorizedOracle` addresses in OracleAggregator are
-set once after deployment and can never be changed.
+`creWorkflowAddress` on the Controller is owner-updatable to allow recovery if the
+workflow is redeployed with a new address. Use a multisig for the owner role in production.
 
 ---
 
@@ -411,7 +444,7 @@ set once after deployment and can never be changed.
 
 | What | Where | Function |
 |---|---|---|
-| All approved routes with current premium and payoff | GovernanceModule | `getApprovedRoutes()` |
+| All approved routes with premium and payoff | GovernanceModule | `getApprovedRoutes()` |
 | Current terms for a specific route | GovernanceModule | `getRouteTerms(flightId, origin, destination)` |
 | All currently active pools | Controller | `getActivePools()` |
 | Active pool for a specific flight+date | Controller | `getPoolAddress(flightId, date)` |
@@ -422,13 +455,16 @@ set once after deployment and can never be changed.
 | Lifetime payouts distributed | Controller | `totalPayoutsDistributed()` |
 | Current flight status | OracleAggregator | `getFlightStatus(flightId, date)` |
 | Whether a traveler has an unclaimed payout | FlightPool | `canClaim(address)` |
-| Claim expiry timestamp for a pool | FlightPool | `claimExpiry()` |
+| Claim expiry timestamp | FlightPool | `claimExpiry()` |
 | Total vault TVL | RiskVault | `totalManagedAssets()` |
 | Locked vs free capital | RiskVault | `lockedCapital()`, `freeCapital()` |
 | Current share price | RiskVault | `totalManagedAssets() / totalShares()` |
-| Share price at a point in time (for APY) | RiskVault | `getPriceSnapshot(index)`, `priceHistoryLength()` |
-| Underwriter's uncollected withdrawal balance | RiskVault | `claimableBalance(address)` |
+| Share price history (for APY) | RiskVault | `getPriceSnapshot(index)`, `priceHistoryLength()` |
+| Underwriter's uncollected balance | RiskVault | `claimableBalance(address)` |
 | Immediate vs locked redemption value | RiskVault | `previewRedeem(shares)`, `previewRedeemFree(shares)` |
+
+There is no `lastUpkeepTimestamp` on the Controller. The CRE platform's own execution logs
+are the source of truth for when the last settlement tick ran.
 
 ---
 
@@ -439,7 +475,7 @@ When a RiskVault withdrawal would breach `lockedCapital`, the request is queued:
 ```
 Underwriter calls riskVault.withdraw(shares)
     │
-    ├─ free capital sufficient  → shares burned
+    ├─ free capital sufficient  → shares burned immediately
     │                             claimableBalance[underwriter] += usdcAmount
     │                             underwriter calls collect() to receive USDC
     │
@@ -449,18 +485,17 @@ Underwriter calls riskVault.withdraw(shares)
 
 After each flight settlement:
     Controller → riskVault.processWithdrawalQueue()
-        └─► starts from queueHead (not index 0)
+        └─► starts from queueHead (never re-scans from index 0)
             drains FIFO until capital is exhausted or queue is empty
-            for each fulfilled or cancelled entry:
-                shares burned (if fulfilled)
-                claimableBalance[underwriter] += usdcAmount (if fulfilled)
-                queueHead advances past this entry
+            for each fulfilled entry:
+                shares burned, claimableBalance[underwriter] += usdcAmount
+                queueHead advances
             underwriter then calls collect() to receive their USDC
 ```
 
-An underwriter can cancel a pending queued request at any time with `cancelWithdrawal(queueIndex)`.
-Only one pending request per address is allowed at a time.
-Credited `claimableBalance` is fixed USDC — it does not earn further yield while uncollected.
+Underwriters can cancel a pending queued request at any time with `cancelWithdrawal(queueIndex)`.
+Only one pending request per address is allowed at a time. Credited `claimableBalance` is
+fixed USDC — it does not earn further yield while sitting uncollected.
 
 ---
 
@@ -471,232 +506,110 @@ USDC sits only in RiskVault (underwriter capital) or FlightPool (traveler premiu
 
 **Governance is modular.** The GovernanceModule is a standalone contract with a clean
 interface. The Controller depends on it via two view calls only. It can be replaced with
-a multisig, DAO, or any other mechanism by updating a single address on the Controller.
+a multisig, DAO, or any other mechanism by updating a single address.
 
 **Terms are set by the route, not the traveler.** Premium and payoff are defined once
 at route approval time. The traveler simply buys — they do not negotiate or pass in values.
 
-**Term updates are forward-only.** Updating a route's premium or payoff via `updateRouteTerms()`
-only affects pools deployed after the update. All existing pools retain the terms they
-were deployed with, protecting travelers who have already bought in.
+**Term updates are forward-only.** Updating a route's terms via `updateRouteTerms()` only
+affects pools deployed after the update. All existing pools retain the terms they were
+deployed with, protecting travelers who have already bought in.
 
 **Pools are created on demand.** FlightPools are deployed lazily on first purchase for a
-route+date. No upfront admin action is required per-date — approving a route is sufficient
-to open it to all future dates.
+route+date. No per-date admin action is required — approving a route opens it to all future dates.
 
 **Route disabling is non-destructive.** Disabling a route only blocks new purchases.
 Existing pools for that route continue to operate and settle normally.
 
 **Capital is fungible across flights.** All underwriters share one RiskVault, so capital
-backs multiple flights simultaneously. `lockedCapital` tracks aggregate exposure rather
-than per-flight allocations.
+backs multiple flights simultaneously. `lockedCapital` tracks aggregate exposure.
 
-**Everything is pull-based.** Neither travelers nor underwriters receive funds automatically.
-Travelers call `claim()` on the FlightPool. Underwriters call `collect()` on the RiskVault.
-This eliminates reentrancy risk from push transfers and gives users full control over when
+**Everything is pull-based.** Travelers call `claim()`. Underwriters call `collect()`.
+This eliminates reentrancy risk from push transfers and gives users control over when
 they receive funds.
 
-**Expired claims go to recovery, not back to the vault.** Unclaimed payouts after the expiry
-window are swept to a dedicated RecoveryPool rather than returned to underwriters. This keeps
-the protocol's obligations visible and auditable, and allows the owner to manually resolve
-legitimate late claims.
+**Expired claims go to recovery, not back to the vault.** Unclaimed payouts after expiry
+are swept to the RecoveryPool rather than returned to underwriters, keeping the protocol's
+obligations visible and auditable.
 
-**Minimal aggregator state.** The aggregator holds data only for unsettled flights with
-active insurance. Deregistration on settlement prevents stale entry accumulation.
+**Self-healing withdrawal queue.** Queue processing is triggered by settlement, not by a
+separate cron job. Capital release and queue crediting are atomic within the same transaction.
 
-**Self-healing withdrawal queue.** Queue processing is triggered by settlement, not by
-a separate cron job. Capital release and queue crediting are atomic within the same transaction.
-
-**No centralised operator.** Automation and oracle data are provided by Chainlink. There is
-no server, cron job, or private key the protocol depends on in production.
+**CRE workflow is the sole oracle writer.** The workflow's forwarder address is the only
+address authorised to push status updates to OracleAggregator. Enforced at contract level.
 
 ---
 
 ## Implementation Notes
 
-### queueHead Pointer — RiskVault
+### `onlyCREWorkflow` — Controller
 
-**Problem:** The withdrawal queue is a plain append-only array. Without a pointer,
-`processWithdrawalQueue()` would start from index 0 on every call and loop through every
-entry, skipping fulfilled and cancelled ones via a condition check:
+The Controller has a single `creWorkflowAddress` state variable and an `onlyCREWorkflow`
+modifier that gates `checkAndSettle()`. This is the entirety of the Chainlink-facing
+interface in Solidity — no upkeep registration, no forwarder wiring, no callback contract.
 
-```
-[✓][✓][✓][✓][✓][✓][pending][pending]
- 0   1   2   3   4   5      6        7
- ↑ always starts here — wastes gas on already-processed entries
-```
+`_checkAndSettle()` does not request oracle data for `Unknown` flights — it simply skips
+them. The CRE workflow is responsible for writing statuses before calling the Controller.
+The Controller only ever acts on flights that have reached a final status.
 
-Entries behind the current active window are never going to yield work — they are done. But
-the loop still has to visit every one of them on each call. Since `processWithdrawalQueue()`
-is called after every single flight settlement, this dead-scanning window grows continuously
-over the lifetime of the protocol. In a long-running system with thousands of historical queue
-entries, this eventually makes `processWithdrawalQueue()` so gas-expensive that the entire
-`checkAndSettle()` transaction could hit the block gas limit and revert — freezing the
-settlement loop entirely.
+### `authorizedOracle` Is the CRE Workflow Address
 
-**Fix:** `queueHead` is a single `uint256` stored in the RiskVault that tracks the index of
-the first entry not yet processed. As entries are fulfilled or skipped as cancelled,
-`queueHead` advances. The next call starts directly from `queueHead`:
+No code change is required in OracleAggregator. The address stored in `authorizedOracle`
+is set to the CRE workflow's forwarder/signer address via the existing one-time `setOracle()`
+setter. The append-only status guard and all access control remain unchanged.
 
-```
-[✓][✓][✓][✓][✓][✓][pending][pending]
- 0   1   2   3   4   5      6        7
-                        ↑ queueHead — dead entries never touched again
-```
+### `sendPayout` Before `decreaseLocked` — Controller
 
-The cost is one extra storage slot. The benefit is that gas cost stays proportional to the
-number of entries processed in that call, not the total historical length of the queue.
+In `_settleDelayed`, `sendPayout` is called before `decreaseLocked`. This ensures the
+vault balance decreases before the locked counter is reduced, keeping `freeCapital`
+conservative at every point in execution. Reversing the order would create a window where
+`freeCapital` appears artificially high.
 
-**Contract:** RiskVault — `uint256 public queueHead`
+### `queueHead` Pointer — RiskVault
 
----
+The withdrawal queue is a plain append-only array. `queueHead` tracks the index of the
+first entry not yet processed. The processor starts from `queueHead` on every call and
+advances it past fulfilled or cancelled entries. This bounds cost to entries processed in
+that call rather than the full lifetime length of the queue.
 
-### settleDelayed Ordering — Controller
+### `totalManagedAssets` — Share Price Integrity
 
-**Problem:** In `_settleDelayed`, the original ordering called `decreaseLocked` before
-`sendPayout`. This meant `freeCapital` looked artificially high for a brief moment during
-execution — the liability was released before the USDC had actually left the vault.
-While harmless in a single transaction (nothing can interleave), it violated the solvency
-invariant mid-execution and would cause confusion if reentrancy paths were ever added.
-
-**Fix:** Reordered to `sendPayout` first, then `decreaseLocked`. The vault balance
-decreases before the locked counter is reduced, keeping `freeCapital` conservative
-at every point in execution.
-
-**Contract:** Controller — `_settleDelayed()`
-
----
-
-### FlightRecord Caching — Controller
-
-**Problem:** `_processAllFlights` calls `pool.flightId()` and `pool.flightDate()` via
-external calls on every FlightPool on every 10-minute settlement tick. With 50+ active
-flights, this is a meaningful gas cost — each external call reads from a separate
-contract's storage.
-
-**Fix:** `flightId` and `flightDate` are cached directly in the `FlightRecord` struct
-inside the Controller's own storage when the pool is first created. The settlement loop
-reads from local storage instead of making external calls.
-
-**Contract:** Controller — `FlightRecord` struct
-
----
-
-### PayoutFailed Event — FlightPool
-
-**Problem:** In `settleDelayed`, per-buyer transfers are intentionally non-reverting to
-prevent one bad address from blocking all payouts. However the original design emitted no
-event on failure — a skipped transfer was completely silent. This makes it impossible to
-detect stranded funds without manually reconciling `buyers.length × payoff` against actual
-transfers.
-
-**Fix:** A `PayoutFailed(address indexed buyer, uint256 amount)` event is emitted when a
-transfer fails. This gives operators and indexers full visibility into which buyers need
-manual recovery.
-
-**Contract:** FlightPool — `settleDelayed()`
-
----
-
-### previewRedeem Includes Locked Capital — RiskVault
-
-**Behaviour:** `previewRedeem` calculates redemption value using the vault's full
-`totalManagedAssets`, which includes `lockedCapital`. This means the value shown to an
-underwriter reflects capital they cannot currently withdraw if most of it is locked.
-
-This is not a bug — the locked capital is still the underwriter's, it is simply
-temporarily unavailable. However it can be misleading UX.
-
-**Mitigation:** A separate `previewRedeemFree(shares)` view calculates redemption value
-against free capital only. The existing `previewRedeem` is unchanged.
-
-**Contract:** RiskVault — new `previewRedeemFree(uint256 shares)` view function
-
----
-
-### totalManagedAssets — RiskVault Share Price Integrity
-
-**Problem:** Relying on `balanceOf(address(this))` for share price means anyone can
-send USDC directly to the vault outside of `deposit()`, inflating share price for
-existing shareholders — the classic ERC4626 inflation attack.
-
-**Fix:** Replace all share price calculations with an internal `totalManagedAssets`
-counter. This variable is the only source of truth for share price and solvency.
-
-`totalManagedAssets` moves at exactly these points:
+All share price calculations use an internal `totalManagedAssets` counter rather than
+`balanceOf(address(this))`. This prevents share price inflation via direct USDC transfers
+(the classic ERC4626 inflation attack). `totalManagedAssets` moves at exactly four points:
 
 | Event | Change |
 |---|---|
 | `deposit()` | `+= amount` |
-| Premium forwarded from FlightPool on not-delayed settlement | `+= premiums received` |
-| `sendPayout()` — USDC sent to a FlightPool | `-= amount` |
+| `recordPremiumIncome()` — premiums forwarded from on-time FlightPool | `+= amount` |
+| `sendPayout()` — USDC sent to a delayed FlightPool | `-= amount` |
 | `collect()` — underwriter collects credited balance | `-= amount` |
 
-`totalManagedAssets` decrements at `collect()` time, not at queue crediting time.
-Decrementing at crediting time would cause the vault to report less capital than it
-physically holds during the window between crediting and collection, which could
-incorrectly block legitimate insurance purchases via the solvency check.
+`balanceSanityCheck()` returns `usdc.balanceOf(address(this)) - totalManagedAssets` —
+should always be zero in normal operation.
 
-`totalAssets()` returns `totalManagedAssets`. `freeCapital()` becomes
-`totalManagedAssets - lockedCapital`. Both `previewRedeem` and `previewRedeemFree` use
-`totalManagedAssets`. A `balanceSanityCheck()` view returns
-`usdc.balanceOf(address(this)) - totalManagedAssets` — should always be zero in normal
-operation.
+### FlightRecord Caching — Controller
 
-**Contract:** RiskVault — `uint256 public totalManagedAssets`
+`flightId` and `flightDate` are cached in the `FlightRecord` struct in the Controller's
+own storage when the pool is first created. The settlement loop reads from local storage
+instead of making external calls to each FlightPool, saving gas per tick.
 
----
+### `PayoutFailed` Event — FlightPool
 
-### Flight Registration Lead Time — Controller
-
-**Problem:** The original check `flightDate > block.timestamp` allowed a flight departing
-in the same block to be registered, creating edge cases where insurance is bought moments
-before departure.
-
-**Fix:** A configurable `minimumLeadTime` parameter (default 1 hour) is added to the
-Controller. The check becomes `flightDate >= block.timestamp + minimumLeadTime`. The
-owner can update this value.
-
-**Contract:** Controller — `uint256 public minimumLeadTime`
-
----
-
-### Lifetime Aggregate Counters — Controller
-
-**Purpose:** Once a flight settles and is cleared, its pool is deregistered and no longer
-queryable. Without counters captured at write time, there is no historical record.
-
-| Counter | Increments on | Amount |
-|---|---|---|
-| `totalPoliciesSold` | every `buyInsurance()` | +1 |
-| `totalPremiumsCollected` | every `buyInsurance()` | +premium |
-| `totalPayoutsDistributed` | every `_settleDelayed()` | +totalPayout |
-
-One additional `SSTORE` each on code paths that already execute a write.
-
-**Contract:** Controller — three `uint256 public` state variables
-
----
+Per-buyer transfers in `settleDelayed` are intentionally non-reverting. A
+`PayoutFailed(address indexed buyer, uint256 amount)` event is emitted when a transfer
+fails, giving operators full visibility into which buyers need manual recovery.
 
 ### Share Price Snapshots — RiskVault
 
-**Purpose:** Without historical snapshots, the frontend cannot compute 7-day or 30-day APY.
-
 A `priceHistory` array stores daily snapshots (`timestamp`, `pricePerShare` scaled to 6
-decimals). A snapshot is written at most once per 24 hours via `_maybeSnapshot()`, called
-inside `processWithdrawalQueue()`. A standalone `snapshot()` callable by the Chainlink
-Automation keeper ensures snapshots are captured even on days with no settlements.
+decimals). A snapshot is written at most once per 24 hours via `_maybeSnapshot()`. The CRE
+workflow calls `RiskVault.snapshot()` at the end of every tick, ensuring snapshots are
+captured even on days with no flight settlements.
 
-The frontend reads `priceHistoryLength()` and `getPriceSnapshot(index)`, does a binary
-search for the snapshot nearest to 7 or 30 days ago, and computes the annualised return
-from the price difference. Storage growth is bounded at ~365 entries per year.
-
-**Contract:** RiskVault
-- `PriceSnapshot[] public priceHistory`
-- `uint256 public lastSnapshotTimestamp`
-- `function priceHistoryLength() external view returns (uint256)`
-- `function getPriceSnapshot(uint256 index) external view returns (uint256 timestamp, uint256 pricePerShare)`
-- `function snapshot() external` — no-op if already snapshotted today
+The frontend reads `priceHistoryLength()` and `getPriceSnapshot(index)`, binary searches
+for the snapshot nearest to 7 or 30 days ago, and computes the annualised return. Storage
+growth is bounded at ~365 entries per year.
 
 ---
 
@@ -704,9 +617,12 @@ from the price difference. Storage growth is bounded at ~365 entries per year.
 
 | Issue | Detail |
 |---|---|
-| **Single oracle trust** | The system depends on Chainlink Functions nodes executing the correct JS source. Chainlink's decentralised DON mitigates single-node risk, but the JS source itself is controlled by the deployer. |
-| **Uncollected underwriter balances** | Credited `claimableBalance` sits in the RiskVault indefinitely. There is no expiry — unlike traveler claims. Consider a similar expiry mechanism for production. |
-| **Correlated event risk** | If many insured flights are delayed simultaneously (e.g. a major weather event), the vault bears the full correlated loss. `minimumSolvencyRatio` at 100% ensures solvency but underwriters absorb that risk. |
+| **CRE Early Access** | CRE workflow deployment is in Early Access. The platform is live and in institutional use, but the developer SDK and deployment process may change. Monitor CRE release notes before deploying to mainnet. |
+| **Single oracle trust** | The system trusts the CRE workflow as the sole oracle writer. CRE runs on a decentralised DON with BFT consensus across nodes, but the workflow source code itself is controlled by the deployer. |
+| **AeroAPI availability** | If AeroAPI is unreachable for an extended period, flights stay `Unknown` and do not settle. No manual intervention needed — the workflow retries every tick automatically. |
+| **Uncollected underwriter balances** | Credited `claimableBalance` sits in the RiskVault indefinitely. There is no expiry, unlike traveler claims. Consider a similar expiry for production. |
+| **Correlated event risk** | If many insured flights are delayed simultaneously, the vault bears the full correlated loss. `minimumSolvencyRatio` at 100% ensures solvency but underwriters absorb that risk. |
 | **No per-underwriter attribution** | Locked capital is a pool-level aggregate. All underwriters share risk and yield proportionally through share price. |
-| **Direct USDC transfers inflate share price** | Mitigated via `totalManagedAssets` internal accounting. Any USDC arriving outside tracked paths is ignored. Drift is observable via `balanceSanityCheck()`. |
-| **Snapshot gaps** | If neither a settlement nor a keeper tick occurs for over 24 hours, a daily snapshot will be missed. The keeper `snapshot()` call guards against this in normal operation. |
+| **Direct USDC transfers** | Mitigated by `totalManagedAssets`. Drift from any out-of-band transfer is observable via `balanceSanityCheck()` but does not affect accounting. |
+| **Snapshot gaps** | If the CRE workflow is paused for over 24 hours, that day's snapshot is missed. Resume the workflow to resume snapshots. |
+| **`creWorkflowAddress` mutability** | `setCreWorkflow()` is owner-updatable to allow recovery on workflow redeploy. A compromised owner key could redirect the oracle writer. Use a multisig for the owner role in production. |

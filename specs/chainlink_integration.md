@@ -1,286 +1,512 @@
-# Flight Delay Insurance Protocol — Chainlink Integration
+# Flight Delay Insurance Protocol — CRE Integration
 
 ---
 
 ## Overview
 
-The protocol uses two Chainlink products:
+This protocol uses the **Chainlink Runtime Environment (CRE)** as its sole Chainlink
+integration. One TypeScript workflow, deployed to a Decentralised Oracle Network, handles
+everything that previously required two separate Chainlink products (Automation and Functions):
 
-- **Chainlink Automation** — triggers the settlement loop every 10 minutes
-- **Chainlink Functions** — fetches real-world flight status from external APIs and delivers
-  it on-chain
+| Responsibility | How CRE handles it |
+|---|---|
+| Triggering the settlement loop every 10 minutes | Native `cron.Trigger` — no contract interface required |
+| Fetching real-world flight status from AeroAPI | `http.NewClient()` with native secrets management |
+| Writing flight statuses on-chain | `evmClient.write()` EVM write capability |
+| Calling `Controller.checkAndSettle()` | `evmClient.write()` in the same tick |
+| Triggering daily share price snapshots | `evmClient.write(RiskVault.snapshot())` at end of each tick |
 
-Together they replace what would otherwise require a persistent off-chain server with a
-private key. There is no centralised keeper bot, no cron job, and no oracle EOA in production.
+> **CRE deployment note:** Workflow deployment is in Early Access. Create an account at
+> `cre.chain.link` and request access before attempting deployment. Simulation runs locally
+> without access approval — begin development there.
 
 ---
 
-## Chainlink Automation
+## What CRE Is
 
-### What It Does
+CRE is an orchestration layer for building workflows that combine on-chain and off-chain
+operations. A workflow is written in TypeScript (or Go) using the CRE SDK, compiled to
+WebAssembly, and deployed to a Workflow DON via the CRE CLI.
 
-Chainlink Automation calls `Controller.performUpkeep()` on a fixed time-based schedule
-(every 10 minutes). This triggers `checkAndSettle()`, which is the protocol's core
-settlement loop — it reads flight statuses, settles mature pools, processes the withdrawal
-queue, and triggers Chainlink Functions requests for any flight still showing `Unknown`.
+Key properties for this protocol:
 
-The keeper also calls `RiskVault.snapshot()` on each tick to ensure daily share price
-snapshots are captured even on days with no flight settlements.
+- Every capability call (HTTP fetch, EVM read, EVM write) is independently executed by
+  each node in the DON and verified by BFT consensus before the result is used.
+- Workflows are stateless per execution. State lives on-chain. Each tick is a fresh run.
+- Secrets (API keys) are managed natively by the CRE platform — never in source code,
+  never on-chain, no manual upload script, no expiry rotation.
+- A single LINK cost model replaces the separate Automation upkeep fund and Functions subscription.
 
-### Contract Changes Required
+---
 
-**Controller must implement `AutomationCompatibleInterface`:**
+## Workflow Structure
 
-```solidity
-interface AutomationCompatibleInterface {
-    function checkUpkeep(bytes calldata checkData)
-        external returns (bool upkeepNeeded, bytes memory performData);
+The settlement workflow uses the trigger-and-callback model:
 
-    function performUpkeep(bytes calldata performData) external;
+```typescript
+import { cron, evm, http } from "@chainlink/cre-sdk";
+
+// Register handler: cron trigger fires every 10 minutes
+cre.Handler(
+  cron.Trigger({ schedule: "0 */10 * * * *" }),
+  onCronTick
+);
+
+async function onCronTick(
+  config:  Config,
+  runtime: cre.Runtime,
+  trigger: cron.Payload
+): Promise<void> {
+  const evmClient  = evm.NewClient(runtime);
+  const httpClient = http.NewClient(runtime);
+
+  // 1. Read active flights from OracleAggregator
+  const flights: FlightRecord[] = await evmClient.read({
+    contract: ORACLE_AGGREGATOR_ADDRESS,
+    method:   "getActiveFlights",
+    args:     []
+  });
+
+  // 2. For each Unknown flight — fetch from AeroAPI
+  const statusUpdates: StatusUpdate[] = [];
+
+  for (const flight of flights) {
+    const currentStatus = await evmClient.read({
+      contract: ORACLE_AGGREGATOR_ADDRESS,
+      method:   "getFlightStatus",
+      args:     [flight.flightId, flight.flightDate]
+    });
+
+    if (currentStatus !== FlightStatus.Unknown) continue; // already final
+
+    try {
+      const resp = await httpClient.get({
+        url: `https://aeroapi.flightaware.com/aeroapi/flights/${flight.flightId}`,
+        params: {
+          start: toDateString(flight.flightDate) + "T00:00:00Z",
+          end:   toDateString(flight.flightDate) + "T23:59:59Z"
+        },
+        headers: { "x-apikey": secrets.AEROAPI_KEY }
+      });
+
+      const derived = deriveStatus(resp.data, flight.flightDate);
+      if (derived !== FlightStatus.Unknown) {
+        statusUpdates.push({ flight, status: derived });
+      }
+    } catch {
+      // API error — leave Unknown, retry next tick
+    }
+  }
+
+  // 3. Write final statuses to OracleAggregator
+  for (const update of statusUpdates) {
+    await evmClient.write({
+      contract: ORACLE_AGGREGATOR_ADDRESS,
+      method:   "updateFlightStatus",
+      args:     [update.flight.flightId, update.flight.flightDate, update.status]
+    });
+  }
+
+  // 4. Call Controller.checkAndSettle()
+  await evmClient.write({
+    contract: CONTROLLER_ADDRESS,
+    method:   "checkAndSettle",
+    args:     []
+  });
+
+  // 5. Call RiskVault.snapshot() — no-op if already snapshotted today
+  await evmClient.write({
+    contract: RISK_VAULT_ADDRESS,
+    method:   "snapshot",
+    args:     []
+  });
 }
 ```
 
-- `checkUpkeep()` is called off-chain by Chainlink nodes. For a time-based upkeep it
-  always returns `upkeepNeeded = true` — the schedule is enforced by the Automation
-  registry, not by on-chain logic.
-- `performUpkeep()` maps directly to `checkAndSettle()` and `riskVault.snapshot()`.
+### Status Derivation Logic
 
-**`onlyKeeper` modifier:**
+```typescript
+const DELAY_THRESHOLD_MS = 45 * 60 * 1000; // 45 minutes
 
-The `onlyKeeper` modifier on `checkAndSettle()` must check `msg.sender` against the
-registered Chainlink Automation registry address, set at Controller deployment:
+function deriveStatus(data: AeroApiResponse, flightDate: bigint): FlightStatus {
+  const flights = data.flights;
+  if (!flights || flights.length === 0) return FlightStatus.Unknown;
+
+  const flight    = flights[flights.length - 1]; // most recent entry for this ident
+  const scheduled = new Date(flight.scheduled_in).getTime();
+  const actual    = flight.actual_in
+    ? new Date(flight.actual_in).getTime()
+    : null;
+
+  if (flight.status === "Cancelled") return FlightStatus.Cancelled;
+
+  if (flight.status === "Landed" && actual !== null) {
+    return (actual - scheduled) > DELAY_THRESHOLD_MS
+      ? FlightStatus.Delayed
+      : FlightStatus.OnTime;
+  }
+
+  return FlightStatus.Unknown; // Scheduled or En Route — not yet final
+}
+```
+
+---
+
+## Solidity Side
+
+The entire Chainlink integration in Solidity is a single access guard on the Controller.
+There is no `FunctionsConsumer` contract, no Automation interface, and no forwarder.
+
+### Controller — CRE Access Guard
 
 ```solidity
-modifier onlyAutomationRegistry() {
-    require(msg.sender == automationRegistry, "Controller: caller is not automation registry");
+// State
+address public creWorkflowAddress;
+
+// Modifier
+modifier onlyCREWorkflow() {
+    require(msg.sender == creWorkflowAddress, "Controller: not CRE workflow");
     _;
 }
+
+// Setter — owner only, callable after workflow deployment
+function setCreWorkflow(address workflow) external onlyOwner {
+    require(workflow != address(0), "Controller: zero address");
+    creWorkflowAddress = workflow;
+}
+
+// Entry point — called by CRE workflow once per tick
+function checkAndSettle() external onlyCREWorkflow {
+    _checkAndSettle();
+    riskVault.snapshot();
+}
 ```
 
-**`startLoop` / `stopLoop` are removed.** Loop lifecycle is managed entirely via the
-Chainlink Automation registry (registering and cancelling the upkeep). The Controller
-has no on-chain loop state to manage.
+### `_checkAndSettle()` — No Oracle Requests
 
-### Registration and Funding
+The internal settlement loop does not initiate any oracle requests. The CRE workflow writes
+all final statuses to OracleAggregator before calling `checkAndSettle()`. The Controller
+reads from OracleAggregator and acts:
 
-1. Deploy the Controller with the Chainlink Automation registry address.
-2. Register a **time-based upkeep** in the Chainlink Automation App or via the registry
-   contract, pointing to `Controller.performUpkeep()`.
-3. Set the interval to 600 seconds (10 minutes).
-4. Fund the upkeep with LINK. The registry deducts LINK per execution.
-5. Monitor the LINK balance — top up before it runs dry or the loop stops.
+```solidity
+function _checkAndSettle() internal {
+    uint256 length = activeFlightKeys.length;
+    uint256 i = 0;
 
-### Gas Considerations
+    while (i < length) {
+        bytes32 key = activeFlightKeys[i];
+        FlightRecord storage record = flightRecords[key];
 
-`performUpkeep()` runs `checkAndSettle()` which loops over all active FlightPools and
-may also call `FunctionsConsumer.requestFlightStatus()` for each Unknown flight. Gas
-cost scales with the number of active flights. Chainlink Automation has a configurable
-gas limit per upkeep — set this high enough to cover your expected maximum active flight
-count. A reasonable starting point is 2,000,000 gas, adjustable as the protocol scales.
+        if (!record.active) {
+            _removeFlightKey(i);
+            length--;
+            continue;
+        }
+
+        IOracleAggregator.FlightStatus status = oracleAggregator.getFlightStatus(
+            record.flightId,
+            record.flightDate
+        );
+
+        if (status == IOracleAggregator.FlightStatus.Unknown) {
+            i++; // not yet final — skip
+        } else if (status == IOracleAggregator.FlightStatus.OnTime) {
+            _settleNotDelayed(key, FlightPool(record.poolAddress));
+            _clearFlight(key, i);
+            length--;
+        } else {
+            // Delayed or Cancelled
+            _settleDelayed(key, FlightPool(record.poolAddress));
+            _clearFlight(key, i);
+            length--;
+        }
+    }
+}
+```
+
+### OracleAggregator — No Code Change Required
+
+The only change for the CRE design is the address passed to `setOracle()`. Previously this
+was the `FunctionsConsumer` contract address. Now it is the CRE workflow's forwarder/signer
+address. The contract itself is identical — the one-time setter pattern and append-only
+status guard are unchanged.
 
 ---
 
-## Chainlink Functions
+## Secrets Management
 
-### What It Does
+The AeroAPI key is stored as a CRE native secret. There is no `SecretsManager` upload
+script, no `slotId` / `version` pair to manage, and no expiry rotation required. Secrets
+are managed through the CRE platform directly.
 
-Chainlink Functions executes a JavaScript source file off-chain inside a decentralised
-oracle network (DON). The JS source fetches flight status from an external flight data
-API, formats the result, and returns it. Chainlink nodes deliver the result back on-chain
-via a callback to the `FunctionsConsumer` contract, which then writes the status to
-`OracleAggregator`.
+```bash
+# Set the secret once
+cre secrets set AEROAPI_KEY --value "your-api-key"
 
-This replaces the original architecture's "authorised oracle EOA" — there is no private
-key, no server, and no single point of failure.
-
-### FunctionsConsumer Contract
-
-This is a new contract that must be written. It inherits from Chainlink's `FunctionsClient`
-and serves as the bridge between the settlement loop and the OracleAggregator.
-
-```solidity
-contract FunctionsConsumer is FunctionsClient {
-
-    // Maps Chainlink requestId → (flightId, date) so the callback knows
-    // which flight to update
-    mapping(bytes32 => FlightRequest) public pendingRequests;
-
-    struct FlightRequest {
-        string  flightId;
-        uint256 flightDate;
-    }
-
-    // Called by Controller during settlement loop for Unknown flights
-    function requestFlightStatus(string calldata flightId, uint256 flightDate)
-        external onlyController returns (bytes32 requestId);
-
-    // Chainlink callback — called by DON nodes after executing JS source
-    function fulfillRequest(
-        bytes32 requestId,
-        bytes memory response,
-        bytes memory err
-    ) internal override;
-}
+# Update the secret (no contract transaction required)
+cre secrets set AEROAPI_KEY --value "new-api-key"
 ```
 
-**`requestFlightStatus()`:**
-- Builds a `FunctionsRequest` with the JS source and encoded `(flightId, flightDate)`
-  as arguments.
-- Sends the request to the Chainlink Functions router via `_sendRequest()`.
-- Stores `requestId → (flightId, flightDate)` so the callback can resolve the flight.
-- Only callable by the Controller.
+In the workflow source, the secret is accessed as:
 
-**`fulfillRequest()`:**
-- Called by Chainlink DON nodes after executing the JS source.
-- Parses the `response` bytes into a `FlightStatus` enum value.
-- Looks up `(flightId, flightDate)` from `pendingRequests[requestId]`.
-- Calls `OracleAggregator.updateFlightStatus(flightId, flightDate, status)`.
-- Handles `err` gracefully — a failed request leaves the status as `Unknown`, which
-  means the settlement loop will request again on the next tick.
-
-### JavaScript Source
-
-The JS source runs inside Chainlink DON nodes. It receives `(flightId, flightDate)` as
-arguments, queries an external flight status API, and returns a single byte representing
-the `FlightStatus` enum value.
-
-Skeleton structure:
-
-```javascript
-const flightId   = args[0];  // e.g. "AA123"
-const flightDate = args[1];  // Unix timestamp as string
-
-// Fetch from flight data API
-const response = await Functions.makeHttpRequest({
-    url: `https://api.flightdata.example/status`,
-    params: { flight: flightId, date: flightDate }
-});
-
-if (response.error) throw Error("API request failed");
-
-const status = response.data.status;  // "ON_TIME" | "DELAYED" | "CANCELLED"
-
-// Map to FlightStatus enum: 1=OnTime, 2=Delayed, 3=Cancelled
-const statusMap = { "ON_TIME": 1, "DELAYED": 2, "CANCELLED": 3 };
-const result = statusMap[status] ?? 0;  // 0 = Unknown if unrecognised
-
-return Functions.encodeUint256(result);
+```typescript
+headers: { "x-apikey": secrets.AEROAPI_KEY }
 ```
 
-The JS source is stored as a string in the FunctionsConsumer contract and can be
-updated by the owner if the API endpoint or response format changes.
+The CRE runtime injects the value at execution time. The key never appears in source code
+or on-chain.
 
-### OracleAggregator Trust Model Change
+---
 
-In the original architecture, `authorizedOracle` was an EOA address. With Chainlink
-Functions, it becomes the `FunctionsConsumer` contract address.
+## Workflow Deployment
+
+```bash
+# Prerequisites
+# 1. Create account at cre.chain.link (Early Access required for deployment)
+# 2. Install CRE CLI
+cre --version
+
+# Authenticate
+cre auth login
+
+# Initialise project
+cre workflow init flight-insurance-settlement
+
+# Add secret
+cre secrets set AEROAPI_KEY --value "your-api-key"
+
+# Simulate locally (no access approval needed, uses real HTTP + EVM reads)
+cre workflow simulate
+
+# Build to WASM
+cre workflow build
+
+# Deploy to DON (requires Early Access)
+cre workflow deploy ./dist/workflow.wasm
+
+# Activate
+cre workflow activate <workflow-id>
+
+# Read the workflow's forwarder/signer address
+cre workflow info <workflow-id>
+```
+
+After reading the forwarder address, wire it into the Solidity contracts:
 
 ```
-Before: authorizedOracle = 0xABC...  (private key held by operator)
-After:  authorizedOracle = FunctionsConsumer contract address
-```
-
-This is set via the one-time `OracleAggregator.setOracle(functionsConsumer)` call during
-post-deployment wiring. Once set it cannot be changed — the same immutability guarantee
-applies regardless of whether the oracle is an EOA or a contract.
-
-### Subscription and Funding
-
-Chainlink Functions uses a subscription model. The FunctionsConsumer contract must be
-added as a consumer to a funded subscription.
-
-1. Create a subscription at [functions.chain.link](https://functions.chain.link).
-2. Fund the subscription with LINK.
-3. Add the FunctionsConsumer contract address as an authorised consumer.
-4. Store the `subscriptionId` in the FunctionsConsumer contract at deployment.
-5. Monitor LINK balance — requests will fail silently (returning an error in `fulfillRequest`)
-   if the subscription runs out of LINK.
-
-### Request Latency
-
-Chainlink Functions requests are not synchronous. After `requestFlightStatus()` is called
-in tick N, the result arrives via `fulfillRequest()` asynchronously — typically within
-1–3 minutes on mainnet. The OracleAggregator will have the status updated by tick N+1
-or N+2 at the latest.
-
-This means a flight does not settle in the same tick that its status is first requested.
-This is expected behaviour — the settlement loop is designed to retry Unknown flights on
-every tick until a final status arrives.
-
-### Handling Failed Requests
-
-If a Chainlink Functions request fails (API error, insufficient LINK, DON timeout), the
-`fulfillRequest()` callback receives a non-empty `err` parameter. The FunctionsConsumer
-should log the error via an event and take no action on the OracleAggregator — the status
-remains `Unknown` and the settlement loop will re-request on the next tick.
-
-```solidity
-function fulfillRequest(bytes32 requestId, bytes memory response, bytes memory err)
-    internal override
-{
-    if (err.length > 0) {
-        emit RequestFailed(requestId, err);
-        return;  // leave status as Unknown, retry next tick
-    }
-    // ... parse and update
-}
+OracleAggregator.setOracle(creWorkflowAddress)    ← one-time, locks forever
+Controller.setCreWorkflow(creWorkflowAddress)       ← owner only
 ```
 
 ---
 
-## Integration Data Flow
+## Workflow Lifecycle Management
 
+```bash
+# Check status of deployed workflows
+cre workflow list
+
+# View details for a specific workflow
+cre workflow info <workflow-id>
+
+# Stream execution logs (useful for debugging API responses and EVM write failures)
+cre workflow logs <workflow-id>
+
+# Pause (stops ticks — no settlement runs while paused)
+cre workflow pause <workflow-id>
+
+# Resume a paused workflow
+cre workflow activate <workflow-id>
+
+# Update workflow source (redeploy WASM — no Solidity transaction required)
+cre workflow build
+cre workflow update <workflow-id> ./dist/workflow.wasm
+
+# Delete permanently
+cre workflow delete <workflow-id>
 ```
-Every 10 minutes:
-    Chainlink Automation Registry
-        │
-        └─► Controller.performUpkeep()
-                │
-                └─► checkAndSettle()
-                        │
-                        ├─► for each active pool with Unknown status:
-                        │       FunctionsConsumer.requestFlightStatus(flightId, date)
-                        │           └─► _sendRequest() to Chainlink Functions router
-                        │                   │
-                        │           [async — 1-3 minutes later]
-                        │                   │
-                        │               Chainlink DON executes JS source
-                        │               fetches flight API
-                        │                   │
-                        │               FunctionsConsumer.fulfillRequest(requestId, response)
-                        │                   └─► OracleAggregator.updateFlightStatus(...)
-                        │
-                        ├─► for each active pool with OnTime / Delayed / Cancelled status:
-                        │       settle pool → RiskVault → processWithdrawalQueue
-                        │
-                        └─► riskVault.snapshot()  ← daily price snapshot if due
+
+Pausing the workflow freezes the settlement loop. Flights with statuses already written to
+OracleAggregator will settle on the first tick after resuming. Flights still `Unknown` will
+not settle until the workflow resumes and the next AeroAPI fetch returns a final status.
+
+---
+
+## Local Simulation
+
+Before deploying to a DON, simulate the workflow locally. Simulation compiles to WASM and
+runs on your machine with real HTTP calls and real EVM reads against a local chain fork.
+EVM writes are simulated — they do not broadcast to mainnet or testnet.
+
+```bash
+# Configure environment for simulation
+export AEROAPI_KEY="your-aeroapi-key"
+export RPC_URL="https://your-rpc-endpoint"
+
+# Run simulation — prints full execution trace
+cre workflow simulate
+
+# Simulate with a specific trigger payload
+cre workflow simulate --trigger-payload '{"timestamp": 1748736000}'
+```
+
+Test all outcomes during simulation:
+
+- A flight that has landed on time → `OnTime` status written, pool settles
+- A flight that is delayed > 45 minutes → `Delayed` status written, pool settles
+- A cancelled flight → `Cancelled` status written, pool settles
+- A flight still en route → no status written, pool stays active
+- An AeroAPI error or empty response → no status written, no revert, pool stays active
+- `checkAndSettle()` with no settled flights → clean no-op
+
+---
+
+## Foundry Testing
+
+The CRE workflow executes off-chain. In Foundry tests, simulate its effect directly using
+`vm.prank`. Test the contracts as if the workflow has already written statuses to
+OracleAggregator and is now calling the Controller.
+
+```solidity
+function test_settleOnTime() public {
+    // Setup: register flight, buy insurance
+    vm.prank(address(controller));
+    aggregator.registerFlight("AA123", flightDate);
+
+    vm.prank(traveler);
+    controller.buyInsurance("AA123", "DEN", "SEA", flightDate);
+
+    // Simulate CRE workflow writing OnTime status
+    vm.prank(creWorkflowAddress);
+    aggregator.updateFlightStatus("AA123", flightDate, IOracleAggregator.FlightStatus.OnTime);
+
+    // Simulate CRE workflow calling checkAndSettle
+    vm.prank(creWorkflowAddress);
+    controller.checkAndSettle();
+
+    assertEq(controller.activeFlightCount(), 0);
+    assertGt(riskVault.totalManagedAssets(), initialDeposit); // premiums absorbed as yield
+}
+
+function test_settleDelayed() public {
+    vm.prank(address(controller));
+    aggregator.registerFlight("AA123", flightDate);
+    vm.prank(traveler);
+    controller.buyInsurance("AA123", "DEN", "SEA", flightDate);
+
+    vm.prank(creWorkflowAddress);
+    aggregator.updateFlightStatus("AA123", flightDate, IOracleAggregator.FlightStatus.Delayed);
+
+    vm.prank(creWorkflowAddress);
+    controller.checkAndSettle();
+
+    address poolAddr = controller.getPoolAddress("AA123", flightDate);
+    FlightPool pool = FlightPool(poolAddr);
+    assertTrue(pool.isSettled());
+    assertTrue(pool.canClaim(traveler));
+}
+
+function test_checkAndSettle_revertsIfNotWorkflow() public {
+    vm.expectRevert("Controller: not CRE workflow");
+    controller.checkAndSettle(); // called from non-workflow address — must revert
+}
+
+function test_updateFlightStatus_revertsIfNotOracle() public {
+    vm.expectRevert(); // authorizedOracle check
+    aggregator.updateFlightStatus("AA123", flightDate, IOracleAggregator.FlightStatus.OnTime);
+}
+
+function test_unknownFlightSkipped() public {
+    vm.prank(address(controller));
+    aggregator.registerFlight("AA123", flightDate);
+    vm.prank(traveler);
+    controller.buyInsurance("AA123", "DEN", "SEA", flightDate);
+
+    // CRE calls checkAndSettle — flight is Unknown, should be a no-op
+    vm.prank(creWorkflowAddress);
+    controller.checkAndSettle();
+
+    assertEq(controller.activeFlightCount(), 1); // pool still active
+}
 ```
 
 ---
 
 ## Deployment Checklist
 
-- [ ] Deploy FunctionsConsumer with Chainlink Functions router address and DON ID
-- [ ] Upload JS source to FunctionsConsumer (or encode at deployment)
-- [ ] Create Chainlink Functions subscription and fund with LINK
-- [ ] Add FunctionsConsumer as consumer on the subscription
-- [ ] Deploy Controller with Chainlink Automation registry address
-- [ ] Set `OracleAggregator.setOracle(functionsConsumer)`
-- [ ] Register Controller upkeep in Chainlink Automation App (time-based, 600s interval)
-- [ ] Fund Automation upkeep with LINK
-- [ ] Set upkeep gas limit (recommend starting at 2,000,000)
-- [ ] Verify `performUpkeep()` executes correctly on first tick
-- [ ] Monitor both LINK balances (Functions subscription + Automation upkeep)
+### CRE Workflow
+
+- [ ] Create account at `cre.chain.link`
+- [ ] Install CRE CLI (`cre --version` to confirm)
+- [ ] Log in: `cre auth login`
+- [ ] Write workflow TypeScript source
+- [ ] Add secret: `cre secrets set AEROAPI_KEY --value "..."`
+- [ ] Run `cre workflow simulate` against a local Anvil fork with all four outcomes
+- [ ] Confirm AeroAPI errors produce no status update and no revert
+- [ ] Confirm cancelled flights produce `Cancelled` status, not `Delayed`
+- [ ] Build: `cre workflow build`
+- [ ] Deploy: `cre workflow deploy ./dist/workflow.wasm` (requires Early Access)
+- [ ] Activate: `cre workflow activate <workflow-id>`
+- [ ] Read forwarder/signer address: `cre workflow info <workflow-id>`
+
+### Solidity Wiring
+
+- [ ] Deploy all contracts following the order in the architecture document
+- [ ] Call `OracleAggregator.setController(controller)` — one-time, locks forever
+- [ ] Call `RiskVault.setController(controller)` — one-time, locks forever
+- [ ] Call `OracleAggregator.setOracle(creWorkflowAddress)` — one-time, locks forever
+- [ ] Call `Controller.setCreWorkflow(creWorkflowAddress)` — owner only
+
+### Post-Deployment Verification
+
+- [ ] `aggregator.authorizedOracle()` equals CRE workflow address
+- [ ] `controller.creWorkflowAddress()` equals CRE workflow address
+- [ ] Approve a test route via GovernanceModule
+- [ ] Deposit USDC as underwriter
+- [ ] Buy insurance as traveler — confirm pool deployed, `activeFlightCount() == 1`
+- [ ] `OracleAggregator.getFlightStatus()` returns `Unknown`
+- [ ] Wait for first workflow tick — check `cre workflow logs <workflow-id>`
+- [ ] If flight has a final status, confirm `StatusUpdated` event on OracleAggregator
+- [ ] On next tick, confirm `checkAndSettle()` called and settlement executes
+- [ ] If OnTime: `activeFlightCount() == 0`, premiums in vault, share price increased
+- [ ] If Delayed: pool claimable, traveler can call `claim()`
 
 ---
 
 ## Operational Monitoring
 
-| What to monitor | Why | Where |
+- Monitor workflow execution history in the CRE platform UI — alert on missed ticks
+- Alert on gaps in workflow execution exceeding 15 minutes
+- Index `StatusUpdated` events on OracleAggregator — flights showing no update for
+  more than 24 hours after their departure date may indicate an AeroAPI issue or workflow pause
+- Index `PayoutFailed` events on FlightPool — any occurrence requires manual recovery
+- Monitor `balanceSanityCheck()` on RiskVault periodically — should always return zero
+- If workflow is paused for an extended period, check `activeFlightCount()` — flights
+  past their departure date and still `Unknown` may need manual operator attention
+
+---
+
+## Supported Networks
+
+Always verify current network support at `https://docs.chain.link/cre/supported-networks`.
+
+CRE-supported networks are fewer than Automation-supported networks. Confirm your target
+chain is listed before committing to CRE for a mainnet deployment.
+
+Simulation runs against any public EVM RPC endpoint regardless of CRE network support —
+only the actual DON deployment requires an officially supported network.
+
+---
+
+## Common Errors
+
+| Error | Cause | Fix |
 |---|---|---|
-| Automation upkeep LINK balance | Loop stops if balance runs out | Chainlink Automation App |
-| Functions subscription LINK balance | Oracle requests fail silently | Chainlink Functions App |
-| `RequestFailed` events on FunctionsConsumer | API errors or DON failures | Event indexer / alerts |
-| `OracleAggregator` status updates | Verify statuses arriving for active flights | Event indexer |
-| `balanceSanityCheck()` on RiskVault | Detect unexpected USDC transfers | Periodic read |
-| Active flight count vs settlements per day | Detect stuck flights | `activeFlightCount()` |
+| `checkAndSettle` reverts `not CRE workflow` | `creWorkflowAddress` not set or wrong address | Call `controller.setCreWorkflow(workflowAddress)` |
+| `updateFlightStatus` reverts | `authorizedOracle` not set or wrong address | Call `aggregator.setOracle(workflowAddress)` — can only be done once |
+| Workflow tick fails (HTTP error) | AeroAPI unreachable or key invalid | Check `cre workflow logs`, verify `AEROAPI_KEY` secret, check AeroAPI status |
+| Flights stay `Unknown` indefinitely | Flight not yet in final state, or workflow paused | Confirm workflow is active via `cre workflow list`; verify flight date has passed |
+| Simulation fails on EVM read | Wrong contract address or ABI in workflow config | Update `ORACLE_AGGREGATOR_ADDRESS`, `CONTROLLER_ADDRESS`, `RISK_VAULT_ADDRESS` |
+| `OracleAlreadySet` on `setOracle` | Called `setOracle` twice | Cannot be changed after first call — ensure correct address before calling |
+| Snapshot not recorded | Workflow paused for over 24 hours | Resume workflow; snapshot writes on the next tick |
+| Workflow deployed but not writing | Activated but `setOracle` / `setCreWorkflow` not called | Wire contract addresses per deployment checklist |

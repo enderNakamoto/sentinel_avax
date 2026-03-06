@@ -1,8 +1,9 @@
 # Flight Delay Insurance Protocol — Development Flow
 
-Each phase has a clear gate. Do not move on until the current phase's validation passes.
-Contracts are introduced in dependency order so nothing is tested against a stub that
-will later change.
+This document describes the order in which contracts should be written, tested, and
+deployed. Each phase has a clear gate — do not move on until the current phase's
+validation passes. Contracts are introduced in dependency order so nothing is tested
+against a stub that will later change.
 
 ---
 
@@ -12,28 +13,33 @@ Every contract in the system touches USDC. Write this first so all subsequent te
 uses a realistic token rather than a bare ERC-20 stub.
 
 1. Implement as a standard mintable ERC-20 with 6 decimals
-2. Add `mint(address, amount)` callable by owner for seeding test wallets
-3. Verify `transfer`, `transferFrom`, `approve`, `balanceOf` all behave correctly
-4. Confirm 6-decimal arithmetic works as expected (1 USDC = 1_000_000)
-5. Confirm `approve` + `transferFrom` pattern works correctly — this is the path the Controller uses
+2. `mint(address, amount)` callable by owner for seeding test wallets
+3. Verify `transfer` works between two addresses
+4. Verify `transferFrom` works with prior approval
+5. Verify `approve` and `allowance` update correctly
+6. Verify `balanceOf` returns correct values after transfers
+7. Confirm 6-decimal arithmetic (1 USDC = 1_000_000, 0.5 USDC = 500_000)
+8. Confirm minting to zero address reverts
 
-**Gate:** Can mint to arbitrary addresses, transfer between them, and approve a spender.
+**Gate:** Mint, transfer, approve all working with correct 6-decimal precision.
 
 ---
 
 ## Phase 2 — RecoveryPool
 
-The simplest contract in the system. Custody and accounting only.
+The simplest contract in the system. Custody only. No dependencies.
 
-1. Receives USDC from expired FlightPools
-2. Records `(sourcePool → amount)` for auditability
-3. Owner can call `withdraw(amount, recipient)` for manual resolution
-4. Test non-owner `withdraw` reverts
-5. Test multiple deposits from different pools are tracked separately
-6. Test owner can withdraw full accumulated balance
+1. Write `receive(address sourcePool, uint256 amount)` — records deposit with source
+2. Write `withdraw(uint256 amount, address recipient)` — owner only
+3. Write `depositsFrom(address pool)` view — returns total received from a specific pool
+4. Test: deposit from a mock address records `sourcePool → amount` correctly
+5. Test: second deposit from same pool accumulates correctly
+6. Test: owner can withdraw full balance to any recipient
+7. Test: non-owner withdraw reverts
+8. Test: multiple deposits from different pool addresses tracked independently
+9. Test: withdraw more than balance reverts
 
-**Gate:** Deposit, tracking, and owner withdraw all work. Contract is complete — it will
-not change again.
+**Gate:** All tests pass. Contract is complete — it will not change again.
 
 ---
 
@@ -41,46 +47,52 @@ not change again.
 
 The route authority. No dependency on any other protocol contract.
 
-**Write the contract in this order:**
+**Write the contract:**
 
 1. Define `Route` struct — `(flightId, origin, destination, premium, payoff, active)`
-2. Add approved routes mapping and admin whitelist mapping
-3. Implement `approveRoute(flightId, origin, destination, premium, payoff)` — owner or admin only
-4. Add validation to `approveRoute` — premium > 0, payoff > premium, route not already active
-5. Implement `disableRoute(flightId, origin, destination)` — owner or admin only
-6. Implement `updateRouteTerms(flightId, origin, destination, newPremium, newPayoff)` — owner or admin only, does not affect existing pools
-7. Implement `addAdmin(address)` / `removeAdmin(address)` — owner only
-8. Implement `isRouteApproved(flightId, origin, destination)` view
-9. Implement `getRouteTerms(flightId, origin, destination)` view
-10. Implement `getApprovedRoutes()` view — returns only active routes
+2. Add `routes` mapping — `bytes32 key → Route`
+3. Add `admins` mapping — `address → bool`
+4. Write `_routeKey(flightId, origin, destination)` internal pure helper
+5. Write `addAdmin(address)` — owner only
+6. Write `removeAdmin(address)` — owner only
+7. Write `onlyOwnerOrAdmin` modifier
+8. Write `approveRoute(flightId, origin, destination, premium, payoff)` — validate premium > 0, payoff > premium, route not already active
+9. Write `disableRoute(flightId, origin, destination)` — mark `active = false`
+10. Write `updateRouteTerms(flightId, origin, destination, newPremium, newPayoff)` — validate terms, update in place, does not affect existing pools
+11. Write `isRouteApproved(flightId, origin, destination)` view
+12. Write `getRouteTerms(flightId, origin, destination)` view — returns `(premium, payoff)`
+13. Write `getApprovedRoutes()` view — returns full array of active routes
 
-**Tests — access control:**
+**Test access control:**
 
-11. Non-owner, non-admin cannot call `approveRoute`, `disableRoute`, `updateRouteTerms`
-12. Non-owner cannot call `addAdmin` or `removeAdmin`
-13. Admin can call route management functions
-14. Admin cannot call `addAdmin` or `removeAdmin`
-15. Revoked admin loses access immediately on next call
+14. Test: non-owner, non-admin cannot call `approveRoute`
+15. Test: non-owner, non-admin cannot call `disableRoute`
+16. Test: non-owner, non-admin cannot call `updateRouteTerms`
+17. Test: non-owner cannot call `addAdmin`
+18. Test: non-owner cannot call `removeAdmin`
+19. Test: admin can call `approveRoute`, `disableRoute`, `updateRouteTerms`
+20. Test: admin cannot call `addAdmin` or `removeAdmin`
+21. Test: after `removeAdmin`, revoked address loses access immediately
 
-**Tests — route lifecycle:**
+**Test route lifecycle:**
 
-16. Approve a route → `isRouteApproved` returns true
-17. Disable a route → `isRouteApproved` returns false
-18. Re-approve a disabled route succeeds
-19. `getRouteTerms` returns correct premium and payoff after approval
-20. `getRouteTerms` returns updated values after `updateRouteTerms`
-21. `getApprovedRoutes` returns only active routes, not disabled ones
-22. `getApprovedRoutes` returns all active routes when multiple exist
+22. Test: `approveRoute` → `isRouteApproved` returns true
+23. Test: `disableRoute` → `isRouteApproved` returns false
+24. Test: re-approving a disabled route works
+25. Test: `getRouteTerms` returns correct premium and payoff after approval
+26. Test: `getRouteTerms` returns updated values after `updateRouteTerms`
+27. Test: `getApprovedRoutes` returns only active routes, not disabled ones
+28. Test: `getApprovedRoutes` returns empty array when no routes approved
 
-**Tests — validation:**
+**Test validation:**
 
-23. `approveRoute` reverts if premium is zero
-24. `approveRoute` reverts if payoff <= premium
-25. `approveRoute` reverts if route already active
-26. `updateRouteTerms` reverts if route does not exist
-27. `disableRoute` reverts if route does not exist
+29. Test: `approveRoute` reverts if premium is zero
+30. Test: `approveRoute` reverts if payoff <= premium
+31. Test: `approveRoute` reverts if route already active
+32. Test: `updateRouteTerms` reverts if route does not exist
+33. Test: `updateRouteTerms` reverts if new payoff <= new premium
 
-**Gate:** All access control, route lifecycle, and validation tests pass.
+**Gate:** All access control, lifecycle, and validation tests pass.
 
 ---
 
@@ -88,131 +100,140 @@ The route authority. No dependency on any other protocol contract.
 
 Depends on: MockUSDC. Deploy with a placeholder controller address for now.
 
-**Write the contract in this order:**
+**Write the contract:**
 
-1. Define state variables — `totalManagedAssets`, `lockedCapital`, `totalShares`, `shares` mapping
-2. Add withdrawal queue variables — `withdrawalQueue` array, `queueHead`, `claimableBalance` mapping, `hasPendingWithdrawal`, `queuedShares`
-3. Add snapshot variables — `priceHistory` array, `lastSnapshotTimestamp`
-4. Implement constructor — set USDC address, controller placeholder
-5. Implement `deposit(amount)` — pull USDC, calculate shares (1:1 first, proportional thereafter), increment `totalManagedAssets`
-6. Implement `_sharesToUsdc(shares)` internal — uses `totalManagedAssets`, not `balanceOf`
-7. Implement immediate withdrawal path in `withdraw(shares)` — burn shares, credit `claimableBalance`
-8. Implement queue path in `withdraw(shares)` — append to queue, reserve shares
-9. Implement `collect()` — transfer credited USDC, decrement `totalManagedAssets`
-10. Implement `cancelWithdrawal(queueIndex)`
-11. Implement `processWithdrawalQueue()` — starts from `queueHead`, credits `claimableBalance`, advances `queueHead` past fulfilled and cancelled entries
-12. Implement `increaseLocked(amount)` / `decreaseLocked(amount)` — `onlyController`
-13. Implement `sendPayout(flightPool, amount)` — `onlyController`, decrements `totalManagedAssets`
-14. Implement `recordPremiumIncome(amount)` — `onlyController`, increments `totalManagedAssets` when premiums arrive from settled pool
-15. Implement `_maybeSnapshot()` internal — writes to `priceHistory` at most once per day
-16. Implement `snapshot()` external — callable by keeper, calls `_maybeSnapshot()`
-17. Implement `freeCapital()` view — `totalManagedAssets - lockedCapital`
-18. Implement `totalAssets()` view — returns `totalManagedAssets`
-19. Implement `previewRedeem(shares)` view — uses `totalManagedAssets`
-20. Implement `previewRedeemFree(shares)` view — uses free capital only
-21. Implement `balanceSanityCheck()` view — returns `balanceOf - totalManagedAssets`
-22. Implement `priceHistoryLength()` and `getPriceSnapshot(index)` views
+1. Declare all state — `totalManagedAssets`, `lockedCapital`, `totalShares`, `shares` mapping, `queueHead`, `withdrawalQueue` array, `claimableBalance` mapping, `hasPendingWithdrawal`, `queuedShares`, `priceHistory` array, `lastSnapshotTimestamp`, `controller`
+2. Write constructor — accept `usdc` and `controller` addresses
+3. Write `deposit(amount)` — pull USDC via transferFrom, calculate shares 1:1 on first deposit, proportional thereafter, increment `totalManagedAssets`
+4. Write `_sharesToUsdc(shares)` internal — `shares × totalManagedAssets / totalShares`
+5. Write `withdraw(shares)` — free capital path (burn shares, credit `claimableBalance`) and queue path (reserve shares, append request)
+6. Write `collect()` — read `claimableBalance`, zero it, decrement `totalManagedAssets`, transfer USDC
+7. Write `cancelWithdrawal(queueIndex)` — mark cancelled, release `queuedShares`, clear `hasPendingWithdrawal`
+8. Write `processWithdrawalQueue()` — loop from `queueHead`, skip cancelled and fulfilled, credit `claimableBalance`, advance `queueHead`
+9. Write `increaseLocked(amount)` — `onlyController`
+10. Write `decreaseLocked(amount)` — `onlyController`, floor at zero
+11. Write `sendPayout(flightPool, amount)` — `onlyController`, transfer USDC, decrement `totalManagedAssets`
+12. Write `recordPremiumIncome(amount)` — `onlyController`, increment `totalManagedAssets`
+13. Write `_maybeSnapshot()` internal — write to `priceHistory` at most once per day if `totalShares > 0`
+14. Write `snapshot()` external — calls `_maybeSnapshot()`, callable by anyone
+15. Write `setController(address)` — one-time setter, reverts if already set
+16. Write view functions — `freeCapital`, `totalAssets`, `previewRedeem`, `previewRedeemFree`, `balanceSanityCheck`, `priceHistoryLength`, `getPriceSnapshot`
 
-**Tests — deposit and shares:**
+**Test deposit and shares:**
 
-23. First deposit issues shares 1:1
-24. Second deposit issues proportional shares based on current price
-25. Share price rises correctly as `totalManagedAssets` grows via `recordPremiumIncome`
-26. `totalManagedAssets` equals sum of all deposits with no other activity
+17. Test: first deposit issues shares 1:1
+18. Test: second deposit issues proportional shares based on current price
+19. Test: `totalManagedAssets` equals deposited amount after deposit with no other activity
+20. Test: share price rises after `recordPremiumIncome`
+21. Test: depositing zero reverts
 
-**Tests — immediate withdrawal:**
+**Test immediate withdrawal:**
 
-27. `withdraw` when free capital sufficient → `claimableBalance` credited, shares burned
-28. `collect` transfers exact credited amount and decrements `totalManagedAssets`
-29. `collect` reverts if `claimableBalance` is zero
+22. Test: `withdraw` when free capital sufficient → shares burned, `claimableBalance` credited
+23. Test: `collect` transfers exact credited amount
+24. Test: `totalManagedAssets` decrements at `collect` time, not at `withdraw` time
+25. Test: `collect` with zero balance reverts
+26. Test: cannot call `withdraw` again while `hasPendingWithdrawal` is true
 
-**Tests — withdrawal queue:**
+**Test queued withdrawal:**
 
-30. `withdraw` when free capital insufficient → request queued, shares reserved
-31. Second `withdraw` while pending reverts
-32. `cancelWithdrawal` releases reserved shares and clears `hasPendingWithdrawal`
-33. `processWithdrawalQueue` credits FIFO starting from `queueHead`, not from index 0
-34. `queueHead` advances past fulfilled entries
-35. `queueHead` advances past cancelled entries without crediting them
-36. Share price used is price at fulfillment time, not request time
-37. Queue stops when free capital exhausted — remaining requests stay pending
-38. Subsequent `processWithdrawalQueue` call resumes from `queueHead`, not from 0
+27. Test: `withdraw` when free capital insufficient → request appended to queue
+28. Test: shares reserved in `queuedShares`, cannot be double-queued
+29. Test: `cancelWithdrawal` releases shares, clears `hasPendingWithdrawal`
+30. Test: cancelled entry does not block queue processing
+31. Test: `processWithdrawalQueue` starts from `queueHead`, not index 0
+32. Test: `queueHead` advances past fulfilled entries
+33. Test: `queueHead` advances past cancelled entries without crediting
+34. Test: queue processes FIFO — first requester credited before second
+35. Test: queue stops when free capital exhausted, remaining requests stay pending
+36. Test: share price at fulfillment time is used, not request time
 
-**Tests — capital locking:**
+**Test capital locking:**
 
-39. `increaseLocked` → `freeCapital` decreases
-40. `decreaseLocked` → `freeCapital` increases
-41. Withdrawal that would breach `lockedCapital` goes to queue even if total balance is sufficient
-42. `sendPayout` decrements `totalManagedAssets` and actual USDC balance together
+37. Test: `increaseLocked` reduces `freeCapital` by exact amount
+38. Test: `decreaseLocked` increases `freeCapital` by exact amount
+39. Test: `decreaseLocked` beyond current value floors at zero, does not revert
+40. Test: withdrawal that would breach `lockedCapital` goes to queue even if total balance is sufficient
+41. Test: `sendPayout` transfers USDC and decrements `totalManagedAssets`
+42. Test: `sendPayout` with insufficient balance reverts
 
-**Tests — totalManagedAssets integrity:**
+**Test totalManagedAssets integrity:**
 
-43. Direct USDC transfer to vault does NOT change `totalManagedAssets` or share price
-44. `balanceSanityCheck` returns exact difference after a direct transfer
-45. After deposit + premium income + payout + collect, `totalManagedAssets` reconciles to zero drift
+43. Test: direct USDC transfer to vault does NOT change `totalManagedAssets`
+44. Test: `balanceSanityCheck` returns the difference after a direct transfer
+45. Test: `balanceSanityCheck` returns zero in all normal operation scenarios
+46. Test: after full cycle (deposit + premium income + payout + collect), `totalManagedAssets` reconciles
 
-**Tests — price snapshots:**
+**Test price snapshots:**
 
-46. `_maybeSnapshot` writes a snapshot when interval has elapsed
-47. Second call within the same day is a no-op
-48. `getPriceSnapshot` returns correct timestamp and price per share
-49. `snapshot()` callable externally with same no-op behaviour within interval
+47. Test: `_maybeSnapshot` writes entry when interval has elapsed
+48. Test: second call within same 24-hour window is a no-op
+49. Test: `getPriceSnapshot` returns correct timestamp and price per share
+50. Test: `priceHistoryLength` increments after each snapshot
+51. Test: `snapshot()` callable externally, respects same interval guard
 
-**Gate:** All deposit, withdraw, queue, collect, locking, and snapshot paths pass.
-`totalManagedAssets` stays in sync throughout every scenario.
+**Gate:** Every test group passes. `totalManagedAssets` stays in sync throughout all scenarios.
 
 ---
 
 ## Phase 5 — OracleAggregator
 
-No dependencies on other protocol contracts at deploy time. Controller and oracle
-addresses are set via one-time setters after deployment.
+No dependencies at deploy time. Controller and oracle addresses set via one-time setters.
 
-**Write the contract in this order:**
+**Write the contract:**
 
-1. Define state variables — `authorizedController`, `authorizedOracle`, `flightStatuses` mapping, `registeredFlights` array
-2. Implement `setController(address)` — callable once, reverts on second call with `ControllerAlreadySet`
-3. Implement `setOracle(address)` — callable once, reverts on second call with `OracleAlreadySet`
-4. Implement `registerFlight(flightId, date)` — `onlyController`, add to tracking list, initialise status to `Unknown`
-5. Implement `deregisterFlight(flightId, date)` — `onlyController`, remove via swap-and-pop
-6. Implement `updateFlightStatus(flightId, date, status)` — `onlyOracle`, append-only enforcement, only for registered flights
-7. Implement `getFlightStatus(flightId, date)` — public view, returns `Unknown` for unregistered flights, never reverts
-8. Implement `getActiveFlights()` — returns current tracking list
+1. Declare state — `authorizedController`, `authorizedOracle`, `flightStatuses` mapping `(bytes32 → FlightStatus)`, `registeredFlights` array, `flightIndex` mapping for swap-and-pop
+2. Define `FlightStatus` enum — `Unknown, OnTime, Delayed, Cancelled`
+3. Write `setController(address)` — callable once, `ControllerAlreadySet` guard
+4. Write `setOracle(address)` — callable once, `OracleAlreadySet` guard
+5. Write `onlyController` and `onlyOracle` modifiers
+6. Write `_flightKey(flightId, date)` internal pure
+7. Write `registerFlight(flightId, date)` — `onlyController`, push to array, record index, set status `Unknown`
+8. Write `deregisterFlight(flightId, date)` — `onlyController`, swap-and-pop, update `flightIndex` for swapped entry
+9. Write `updateFlightStatus(flightId, date, status)` — `onlyOracle`, require flight registered, require new status > current status (append-only)
+10. Write `getFlightStatus(flightId, date)` — public view, return `Unknown` if not registered, never reverts
+11. Write `getActiveFlights()` — returns current `registeredFlights` array
 
-**Tests — one-time setters:**
+Note: `getActiveFlights()` is read by the CRE workflow at the start of each tick to know
+which flights to check against AeroAPI.
 
-9. `setController` sets address correctly
-10. `setController` reverts on second call regardless of caller
-11. `setOracle` sets address correctly
-12. `setOracle` reverts on second call
-13. `onlyController` functions revert for any caller before `setController` is called
-14. `onlyOracle` functions revert for any caller before `setOracle` is called
+**Test one-time setters:**
 
-**Tests — registration:**
+12. Test: `setController` succeeds on first call
+13. Test: `setController` reverts on second call with `ControllerAlreadySet`
+14. Test: `setOracle` succeeds on first call
+15. Test: `setOracle` reverts on second call with `OracleAlreadySet`
+16. Test: `registerFlight` reverts before `setController` is called
+17. Test: `updateFlightStatus` reverts before `setOracle` is called
 
-15. `registerFlight` adds to active list and initialises status to `Unknown`
-16. `registerFlight` by non-controller reverts
-17. `deregisterFlight` removes correct entry from active list
-18. `deregisterFlight` by non-controller reverts
-19. `getFlightStatus` for unregistered flight returns `Unknown` without reverting
+**Test registration:**
 
-**Tests — status updates:**
+18. Test: `registerFlight` adds flight to active list, status initialised to `Unknown`
+19. Test: `registerFlight` by non-controller reverts
+20. Test: `deregisterFlight` removes flight from active list
+21. Test: `deregisterFlight` by non-controller reverts
+22. Test: `getFlightStatus` for unregistered flight returns `Unknown` without reverting
+23. Test: `getActiveFlights` returns correct set after each register/deregister
 
-20. `updateFlightStatus` by non-oracle reverts
-21. `updateFlightStatus` for unregistered flight reverts
-22. `Unknown → OnTime` transition works
-23. `Unknown → Delayed` transition works
-24. `Unknown → Cancelled` transition works
-25. `OnTime → Unknown` reverts
-26. `Delayed → OnTime` reverts
-27. `Cancelled → Delayed` reverts
+**Test status transitions:**
 
-**Tests — active list integrity:**
+24. Test: `Unknown → OnTime` accepted
+25. Test: `Unknown → Delayed` accepted
+26. Test: `Unknown → Cancelled` accepted
+27. Test: `OnTime → Unknown` reverts
+28. Test: `OnTime → Delayed` reverts
+29. Test: `Delayed → Unknown` reverts
+30. Test: `Delayed → OnTime` reverts
+31. Test: `Cancelled → anything` reverts
+32. Test: non-oracle cannot call `updateFlightStatus`
+33. Test: update for unregistered flight reverts
 
-28. Register 5 flights, deregister the 3rd — list has 4 remaining with no gaps
-29. Deregister the last entry in list — no out-of-bounds error
-30. Deregister the only entry — list is empty, no error
-31. `getActiveFlights` returns exactly the registered-but-not-deregistered set
+**Test swap-and-pop deregistration:**
+
+34. Test: register 5 flights, deregister index 2 — remaining 4 have no gaps
+35. Test: register 3 flights, deregister the last — no out-of-bounds error
+36. Test: register 1 flight, deregister it — array is empty
+37. Test: `flightIndex` for swapped entry updated correctly after deregistration
 
 **Gate:** All status lifecycle, access control, and swap-and-pop tests pass.
 
@@ -220,473 +241,498 @@ addresses are set via one-time setters after deployment.
 
 ## Phase 6 — FlightPool
 
-Depends on: MockUSDC, RiskVault address, RecoveryPool address. Use a mock Controller
-address for testing.
+Depends on: MockUSDC, RiskVault address, RecoveryPool address. Use a mock Controller address.
 
-**Write the contract in this order:**
+**Write the contract:**
 
-1. Define state variables — `flightId`, `flightDate`, `premium`, `payoff`, `controller`, `riskVault`, `recoveryPool`, `usdc`, `claimExpiryWindow`
-2. Add settlement state — `isOpen`, `isSettled`, `outcome` enum, `claimExpiry`
-3. Add buyer state — `buyers` array, `hasBought` mapping, `claimed` mapping
-4. Implement constructor — set all immutables, `isOpen = true`, `outcome = Pending`
-5. Implement `buyInsurance(buyer)` — `onlyController`, require open and not settled and not already bought
-6. Implement `closePool()` — `onlyController`
-7. Implement `settleNotDelayed()` — `onlyController`, forward all premiums to RiskVault, call `riskVault.recordPremiumIncome(amount)`
-8. Implement `settleDelayed()` — `onlyController`, require balance >= `payoff × buyerCount`, set `claimExpiry`, non-reverting transfer loop with `PayoutFailed` event, return remainder to RiskVault
-9. Implement `claim()` — public, require settled delayed, has policy, not already claimed, within expiry
-10. Implement `sweepExpired()` — public, require past expiry, transfer remainder to RecoveryPool
-11. Implement views — `buyerCount`, `maxLiability`, `canClaim(address)`, `totalPremiumsHeld`
+1. Declare state — `flightId`, `flightDate`, `premium`, `payoff`, `controller`, `riskVault`, `recoveryPool`, `usdc`, `isOpen`, `isSettled`, `outcome`, `claimExpiry`, `buyers` array, `hasBought` mapping, `claimed` mapping
+2. Write constructor — set all values, validate addresses and premium < payoff, `isOpen = true`, `outcome = Pending`
+3. Write `onlyController` modifier
+4. Write `buyInsurance(address buyer)` — `onlyController`, require open + not settled + not already bought
+5. Write `closePool()` — `onlyController`
+6. Write `settleNotDelayed()` — `onlyController`, transfer all USDC to RiskVault, call `riskVault.recordPremiumIncome(amount)`
+7. Write `settleDelayed(uint256 claimExpiryWindow)` — `onlyController`, require balance >= `payoff × buyerCount`, set `claimExpiry`, non-reverting per-buyer loop with `PayoutFailed` event on failure, return remainder to RiskVault
+8. Write `claim()` — require settled delayed + has policy + not claimed + within expiry, transfer payoff
+9. Write `sweepExpired()` — require past expiry, transfer remainder to RecoveryPool
+10. Write view functions — `buyerCount`, `maxLiability`, `canClaim(address)`, `totalPremiumsHeld`
 
-**Tests — purchase:**
+**Test purchase:**
 
-12. `buyInsurance` records buyer and increments `buyerCount`
-13. Same address cannot buy twice
-14. Non-controller cannot call `buyInsurance`
-15. Cannot buy after `closePool`
-16. Cannot buy after settlement
+11. Test: `buyInsurance` records buyer in array and `hasBought` mapping
+12. Test: `buyerCount` increments correctly
+13. Test: same address cannot buy twice
+14. Test: non-controller cannot call `buyInsurance`
+15. Test: cannot buy after `closePool`
+16. Test: cannot buy after settlement
 
-**Tests — not delayed settlement:**
+**Test not-delayed settlement:**
 
-17. `settleNotDelayed` transfers all premiums to RiskVault
-18. `riskVault.recordPremiumIncome` called with correct amount
-19. Pool `isSettled` = true, `isOpen` = false, `outcome` = NotDelayed
-20. Cannot call `settleNotDelayed` twice
+17. Test: `settleNotDelayed` transfers all USDC balance to RiskVault
+18. Test: `riskVault.recordPremiumIncome` called with correct amount
+19. Test: pool `isSettled = true`, `isOpen = false`, `outcome = NotDelayed`
+20. Test: `settleNotDelayed` on already-settled pool reverts
+21. Test: pool with zero buyers settles cleanly (transfers zero)
 
-**Tests — delayed settlement:**
+**Test delayed settlement:**
 
-21. Pre-fund pool with `payoff × buyerCount` USDC (simulating `sendPayout`)
-22. `settleDelayed` sets `claimExpiry = block.timestamp + claimExpiryWindow`
-23. Pool `isSettled` = true, `outcome` = Delayed after settlement
-24. Remainder returned to RiskVault after payout loop
-25. `PayoutFailed` emitted when transfer to bad address fails
-26. Bad address failure does not block payouts to other buyers
-27. `settleDelayed` reverts without sufficient pre-funded balance
-28. Cannot call `settleDelayed` twice
+22. Test: `settleDelayed` requires pre-funded balance >= `payoff × buyerCount`
+23. Test: `claimExpiry` set to `block.timestamp + claimExpiryWindow` correctly
+24. Test: pool `isSettled = true`, `outcome = Delayed`
+25. Test: each buyer can claim exactly `payoff` USDC
+26. Test: remainder returned to RiskVault after payout loop (from pre-funded surplus, e.g. premiums)
+27. Test: `PayoutFailed` event emitted when transfer to a non-receiving address fails
+28. Test: failed transfer does not revert — other buyers still receive payoff
+29. Test: `settleDelayed` on already-settled pool reverts
 
-**Tests — claim flow:**
+**Test claim flow:**
 
-29. Buyer calls `claim()` before expiry → receives exact `payoff`
-30. `claimed[buyer]` = true → second `claim()` reverts
-31. Non-buyer cannot claim
-32. `claim()` after expiry reverts
-33. `claim()` on not-delayed pool reverts
-34. `canClaim(address)` returns correct value before and after claiming
+30. Test: buyer calls `claim()` before expiry — receives payoff
+31. Test: `claimed[buyer] = true` after successful claim
+32. Test: second `claim()` by same buyer reverts
+33. Test: non-buyer `claim()` reverts
+34. Test: `claim()` after expiry timestamp reverts
+35. Test: `claim()` on not-delayed pool reverts
+36. Test: `canClaim(address)` returns correct value for each state combination
 
-**Tests — sweep:**
+**Test sweep:**
 
-35. `sweepExpired` before expiry reverts
-36. `sweepExpired` after expiry transfers remaining USDC to RecoveryPool
-37. RecoveryPool records source pool and amount
-38. After sweep, `claim()` reverts
+37. Test: `sweepExpired` before expiry reverts
+38. Test: `sweepExpired` after expiry transfers remaining USDC to RecoveryPool
+39. Test: RecoveryPool records correct source and amount
+40. Test: `claim()` after sweep reverts
+41. Test: if all buyers claimed, sweep transfers zero
 
-**Gate:** Both settlement paths, claim flow, and expiry sweep all pass. `PayoutFailed`
-emits correctly for bad addresses.
+**Gate:** Both settlement paths, claim flow, and expiry sweep all pass.
 
 ---
 
-## Phase 7 — Controller (no Chainlink)
+## Phase 7 — Controller
 
-Depends on all contracts above. Use an EOA as keeper for this phase — no Chainlink yet.
+Depends on all contracts above. This phase builds the complete Controller — including the
+`onlyCREWorkflow` guard — and verifies it end-to-end using a test EOA as the workflow address.
 
-**Write the contract in this order:**
+The `creWorkflowAddress` state variable and `onlyCREWorkflow` modifier are written in their
+final form from the start. For Phase 7 testing, a test EOA is set as `creWorkflowAddress`.
+In Phase 10, the test EOA is replaced with the real CRE workflow address — this is a
+single `setCreWorkflow()` call with no contract changes required.
 
-1. Define state variables — `owner`, `usdc`, `riskVault`, `oracleAggregator`, `governanceModule`, `recoveryPool`, `keeper`
-2. Add solvency config — `totalMaxLiability`, `minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow`
-3. Add lifetime counters — `totalPoliciesSold`, `totalPremiumsCollected`, `totalPayoutsDistributed`
-4. Add flight registry — `FlightRecord` struct with cached `flightId` and `flightDate`, `flightRecords` mapping, `activeFlightKeys` array
-5. Implement `onlyOwner` and `onlyKeeper` modifiers
-6. Implement `buyInsurance(flightId, origin, destination, date)`:
-   - Check route approved via GovernanceModule
-   - Read terms from GovernanceModule
-   - Enforce `minimumLeadTime`
-   - Deploy new FlightPool if none exists for this route+date
-   - Register flight with OracleAggregator on first deployment
-   - Run solvency check
-   - `transferFrom` traveler to FlightPool
-   - `increaseLocked` on RiskVault
-   - `flightPool.buyInsurance(traveler)`
-   - Increment `totalPoliciesSold` and `totalPremiumsCollected`
-7. Implement `_settleNotDelayed(key, pool)` — decreaseLocked, closePool, settleNotDelayed, processWithdrawalQueue, _clearFlight
-8. Implement `_settleDelayed(key, pool)` — sendPayout FIRST, then decreaseLocked, closePool, settleDelayed, processWithdrawalQueue, _clearFlight, increment `totalPayoutsDistributed`
-9. Implement `_clearFlight(key, index)` — mark inactive, deregisterFlight, swap-and-pop
-10. Implement `checkAndSettle()` — `onlyKeeper`, loop active pools, read status, branch on outcome, call `riskVault.snapshot()`
-11. Implement `isSolventForNewPurchase(flightId, date)` view
-12. Implement `getActivePools()`, `getPoolAddress()`, `activeFlightCount()` views
-13. Implement owner setters — `setMinimumSolvencyRatio`, `setMinimumLeadTime`, `setClaimExpiryWindow`, `setKeeper`, `setGovernanceModule`
+**Write the contract:**
 
-**Tests — purchase flow:**
+1. Declare state — `owner`, `usdc`, `riskVault`, `oracleAggregator`, `governanceModule`, `recoveryPool`, `creWorkflowAddress`, `totalMaxLiability`, `minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow`, `flightRecords` mapping, `activeFlightKeys` array, `totalPoliciesSold`, `totalPremiumsCollected`, `totalPayoutsDistributed`
+2. Write `FlightRecord` struct — `poolAddress`, `flightId` (cached), `flightDate` (cached), `active`
+3. Write `onlyOwner` and `onlyCREWorkflow` modifiers
+4. Write `_flightKey(flightId, date)` internal pure
+5. Write `buyInsurance(flightId, origin, destination, date)` — route check → terms read → lead time check → lazy pool deploy + register if needed → solvency check → transferFrom → increaseLocked → pool.buyInsurance → counter increments
+6. Write `_deployPool(flightId, date, premium, payoff)` internal — deploy FlightPool, populate FlightRecord with cached `flightId` and `flightDate`, push to `activeFlightKeys`
+7. Write `_settleNotDelayed(key, pool)` internal — `pool.closePool` → `pool.settleNotDelayed` → `decreaseLocked` → `processWithdrawalQueue` → `_clearFlight`
+8. Write `_settleDelayed(key, pool)` internal — `sendPayout` FIRST → `decreaseLocked` → `pool.closePool` → `pool.settleDelayed(claimExpiryWindow)` → `processWithdrawalQueue` → `_clearFlight` → `totalPayoutsDistributed` increment
+9. Write `_clearFlight(key, index)` internal — set `active = false` → `deregisterFlight` → swap-and-pop `activeFlightKeys`
+10. Write `_checkAndSettle()` internal — loop over `activeFlightKeys`, read status from OracleAggregator, branch Unknown (skip) / OnTime / Delayed / Cancelled
+11. Write `checkAndSettle()` external — `onlyCREWorkflow`, calls `_checkAndSettle()` then `riskVault.snapshot()`
+12. Write `setCreWorkflow(address)` — `onlyOwner`, validates non-zero address
+13. Write `isSolventForNewPurchase(flightId, date)` view
+14. Write `getActivePools()`, `getPoolAddress()`, `activeFlightCount()` views
+15. Write owner setters — `setMinimumSolvencyRatio`, `setMinimumLeadTime`, `setClaimExpiryWindow`, `setGovernanceModule`
 
-14. Reverts if route not approved in GovernanceModule
-15. Reverts if route disabled in GovernanceModule
-16. Reverts if `flightDate < block.timestamp + minimumLeadTime`
-17. Deploys new FlightPool on first purchase for a route+date
-18. Reuses existing pool on second purchase for same route+date
-19. New pool gets terms from GovernanceModule at deployment time
-20. Registers flight with OracleAggregator on first deployment only
-21. Solvency check passes when vault has sufficient free capital
-22. Solvency check reverts when vault is undercollateralised
-23. `totalPoliciesSold` increments by 1 per purchase
-24. `totalPremiumsCollected` increments by premium per purchase
-25. `totalMaxLiability` increases by payoff per purchase
+Note: `_checkAndSettle()` does NOT request oracle data for `Unknown` flights — it simply
+skips them. The CRE workflow is responsible for writing all final statuses to OracleAggregator
+before calling `checkAndSettle()`. This is the correct design from day one.
 
-**Tests — settlement ordering:**
+**Test the CRE workflow guard:**
 
-26. `_settleDelayed` calls `sendPayout` before `decreaseLocked`
-27. After `_settleDelayed`, RiskVault `lockedCapital` reduced by pool's liability
-28. After `_settleNotDelayed`, premiums in RiskVault and `lockedCapital` released
-29. `processWithdrawalQueue` called after both settlement types
-30. `totalPayoutsDistributed` increments on delayed settlement only
+16. Test: `checkAndSettle()` from an address that is not `creWorkflowAddress` reverts with `not CRE workflow`
+17. Test: `checkAndSettle()` from `creWorkflowAddress` succeeds
+18. Test: `setCreWorkflow(address(0))` reverts
+19. Test: `setCreWorkflow` from non-owner reverts
+20. Test: after `setCreWorkflow` with a new address, the old address is rejected and the new one is accepted
 
-**Tests — flight registry:**
+**Test purchase flow:**
 
-31. `activeFlightCount` correct before and after settlement
-32. `activeFlightKeys` length correct after swap-and-pop removal
-33. `flightRecords[key].active` = false after settlement
-34. `deregisterFlight` called on OracleAggregator after settlement
-35. `getActivePools` returns only unsettled pools
-36. Cached `flightId` and `flightDate` in `FlightRecord` match deployed pool values
+21. Test: reverts if route not approved in GovernanceModule
+22. Test: reverts if route disabled
+23. Test: reverts if departure is within `minimumLeadTime`
+24. Test: reverts if solvency check fails
+25. Test: first purchase for route+date deploys new FlightPool
+26. Test: second purchase for same route+date reuses existing pool
+27. Test: FlightPool deployment reads terms from GovernanceModule at deploy time
+28. Test: `oracleAggregator.registerFlight` called only on first purchase for a route+date
+29. Test: `usdc.transferFrom` moves premium from traveler to FlightPool
+30. Test: `riskVault.increaseLocked` called with correct payoff amount
+31. Test: `totalPoliciesSold` increments by 1
+32. Test: `totalPremiumsCollected` increments by premium amount
+33. Test: `totalMaxLiability` increases by payoff amount
+34. Test: FlightRecord caches correct `flightId` and `flightDate`
 
-**Tests — end-to-end not delayed:**
+**Test settlement ordering:**
 
-37. Underwriter deposits → traveler buys → oracle set to OnTime → keeper calls `checkAndSettle` → premiums in vault → share price rises → underwriter withdraws → underwriter collects
+35. Test: `_settleDelayed` calls `sendPayout` before `decreaseLocked`
+36. Test: after not-delayed settlement, premiums in RiskVault, `lockedCapital` released
+37. Test: after delayed settlement, pool is claimable, `lockedCapital` released
+38. Test: `processWithdrawalQueue` called after both settlement types
+39. Test: `totalPayoutsDistributed` increments on delayed settlement only
+40. Test: `totalMaxLiability` decreases by `pool.maxLiability()` after settlement
 
-**Tests — end-to-end delayed:**
+**Test flight registry:**
 
-38. Underwriter deposits → traveler buys → oracle set to Delayed → keeper calls `checkAndSettle` → traveler claims → advance time past expiry → `sweepExpired` moves remainder to RecoveryPool
+41. Test: `activeFlightCount` correct before and after settlement
+42. Test: settled pool removed from `activeFlightKeys` via swap-and-pop
+43. Test: `flightRecords[key].active = false` after settlement
+44. Test: `deregisterFlight` called on OracleAggregator after settlement
+45. Test: `getActivePools` returns only unsettled pools
+46. Test: settlement loop reads from FlightRecord cache, not external pool calls
 
-**Gate:** Both full lifecycle tests pass. All counters reconcile. Solvency invariant
-holds at every step.
+**Test solvency invariant:**
+
+47. Test: `isSolventForNewPurchase` returns false with empty vault
+48. Test: `isSolventForNewPurchase` returns true after sufficient deposit
+49. Test: `isSolventForNewPurchase` returns false after vault reaches capacity
+50. Test: `minimumSolvencyRatio` of 150 requires 1.5× coverage — verify check math
+
+**End-to-end — not delayed:**
+
+51. Underwriter deposits USDC
+52. Traveler approves and buys insurance
+53. Simulate CRE workflow: `vm.prank(creWorkflowAddress)` → set OracleAggregator status to OnTime
+54. Simulate CRE workflow: `vm.prank(creWorkflowAddress)` → call `checkAndSettle()`
+55. Verify premiums forwarded to RiskVault, share price increased
+56. Underwriter withdraws → `claimableBalance` credited → calls `collect()` → receives USDC
+
+**End-to-end — delayed:**
+
+57. Underwriter deposits USDC
+58. Traveler approves and buys insurance
+59. Simulate CRE workflow: `vm.prank(creWorkflowAddress)` → set OracleAggregator status to Delayed
+60. Simulate CRE workflow: `vm.prank(creWorkflowAddress)` → call `checkAndSettle()`
+61. Verify pool is claimable, `claimExpiry` set
+62. Traveler calls `claim()` — receives payoff
+63. Advance time past `claimExpiry`
+64. Call `sweepExpired()` — remainder goes to RecoveryPool
+
+**Gate:** Both full lifecycle tests pass. All counters reconcile. Solvency invariant holds
+at every step. CRE workflow guard rejects all unauthorised callers.
 
 ---
 
 ## Phase 8 — Integration Tests
 
-No new contracts. Run scenarios exercising the full system with multiple concurrent
-flights and edge cases.
+No new contracts. Multi-flight scenarios under realistic conditions.
 
-1. 3 flights active simultaneously — one on-time, one delayed, one cancelled — all settle correctly, vault balance and `totalManagedAssets` reconcile
-2. 5 underwriters, staggered deposits, withdrawal queue with mixed FIFO ordering — queue drains correctly as capital frees across multiple settlements
-3. Route terms updated mid-lifecycle — existing pool uses old terms, next purchase deploys new pool with new terms, both settle correctly
-4. Route disabled mid-lifecycle — existing pool settles normally, new purchase reverts
-5. `minimumSolvencyRatio` enforcement — fill vault near capacity, verify the next purchase correctly blocks and succeeds after more deposits
-6. Claim expiry — fund, settle delayed, advance time past expiry, verify `claim` reverts, `sweepExpired` works
-7. `totalManagedAssets` stress test — run 10 full purchase + settlement cycles, confirm counter stays in sync with `balanceOf` throughout
-8. `queueHead` stress test — queue 20 withdrawals, process across 5 settlement cycles, confirm `queueHead` only advances, never resets
+1. Deploy all contracts fresh for each scenario
+2. Test: 3 flights active simultaneously, outcomes OnTime / Delayed / Cancelled — vault balance and `totalManagedAssets` reconcile after all three settle
+3. Test: 5 underwriters deposit, queue fills — drains FIFO correctly as capital releases across settlements
+4. Test: route terms updated mid-lifecycle — existing pool uses old terms, next purchase deploys new pool with new terms
+5. Test: route disabled after one pool is active — existing pool settles normally, new purchase reverts
+6. Test: `minimumSolvencyRatio` at 150 — verify purchases blocked correctly when near capacity
+7. Test: full claim expiry cycle — fund delayed pool, advance time, `claim()` reverts, `sweepExpired()` works, RecoveryPool correct
+8. Test: `queueHead` never regresses — run 20 settlement cycles, verify it only moves forward
+9. Test: `totalManagedAssets` stress test — 10 full purchase + settlement cycles, `balanceSanityCheck` returns zero throughout
+10. Test: `vm.prank(creWorkflowAddress)` used throughout for all `updateFlightStatus` and `checkAndSettle` calls
 
 **Gate:** All scenarios pass. No counter drift. No stuck pools.
 
 ---
 
-## Phase 9 — Mock Flight API
+## Phase 9 — Mock Flight API Server
 
-Before writing the real Chainlink Functions JS source, build a local mock API server
-that mirrors the AeroAPI response shape. This lets you develop and test the JS source
-without a live API key or real flight data.
+Build a local mock server mirroring the AeroAPI response shape before writing the
+CRE workflow's HTTP logic.
 
-1. Build a local HTTP server (Node.js / Express)
-2. Implement `GET /flights/:ident` with query params `?start=...&end=...`
-3. Response shape matches AeroAPI's `/flights/{ident}` schema — `ident`, `scheduled_in`, `actual_in`, `status` fields
-4. Add a test control endpoint `POST /mock/set` to configure per-ident response — on-time, delayed, cancelled, or not yet landed
-5. Implement status derivation logic:
-   - `status == "Cancelled"` → Cancelled
-   - `status == "Landed"` and `actual_in - scheduled_in > 45 min` → Delayed
-   - `status == "Landed"` and within 45 min → OnTime
-   - `status == "Scheduled"` or `"En Route"` → Unknown
-6. Add `POST /mock/error` to make the next request for a given ident fail
-7. Add a response returning an empty `flights` array — JS source should return Unknown
-8. Write tests confirming each mock scenario returns the expected status value
+1. Set up Node.js / Express server with endpoint `GET /flights/:ident?start=...&end=...`
+2. Define response shape mirroring AeroAPI `/flights/{ident}`:
+   ```json
+   {
+     "flights": [{
+       "ident": "AA123",
+       "scheduled_in": "2025-06-01T11:00:00Z",
+       "actual_in":    "2025-06-01T11:52:00Z",
+       "status":       "Landed"
+     }]
+   }
+   ```
+3. Add test control endpoint `POST /flights/:ident/set` accepting `{ status, delayMinutes }` to configure per-flight responses
+4. Implement status derivation in mock — `Landed` within 45 min → OnTime, over 45 min → Delayed, `Cancelled` → Cancelled, `Scheduled` / `En Route` → Unknown
+5. Test: configure OnTime → correct shape returned
+6. Test: configure Delayed (60 min) → correct shape returned
+7. Test: configure Cancelled → correct shape returned
+8. Test: unknown ident → empty `flights` array
+9. Test: simulate API error (5xx) → error body returned
+10. Test: in-flight / scheduled → `actual_in` is null
 
-**Gate:** Mock server returns correct status for all scenarios. Status derivation logic
-is validated and ready to copy into the JS source.
-
----
-
-## Phase 10 — FunctionsConsumer (mock API)
-
-Write the `FunctionsConsumer` contract and the JS source pointed at the local mock API.
-Test entirely locally before touching a real API key.
-
-**Write the contract in this order:**
-
-1. Inherit from `FunctionsClient`
-2. Define state variables — `router`, `donId`, `subscriptionId`, `gasLimit`, `oracleAggregator`, `controller`, `pendingRequests` mapping `(requestId → FlightRequest)`, `jsSource` string
-3. Implement constructor — set all addresses, call `FunctionsClient(router)`
-4. Implement `requestFlightStatus(flightId, date)` — `onlyController`, build `FunctionsRequest`, call `_sendRequest`, store `requestId → (flightId, date)`, emit `RequestSent`
-5. Implement `fulfillRequest(requestId, response, err)` — internal override, handle error (emit `RequestFailed`, return), parse response, call `OracleAggregator.updateFlightStatus`, emit `StatusUpdated`
-6. Implement `setJsSource(string)` — owner only
-7. Implement `setGasLimit(uint32)` — owner only
-8. Define events — `RequestSent`, `RequestFailed`, `StatusUpdated`
-
-**Write the JS source (mock API version):**
-
-9. Read `args[0]` (flightId) and `args[1]` (Unix timestamp string)
-10. Convert timestamp to date string for query bounds
-11. Call `Functions.makeHttpRequest` to the mock server
-12. Handle error and empty response — return `0` (Unknown)
-13. Parse `status`, `scheduled_in`, `actual_in` from response
-14. Apply 45-minute delay threshold
-15. Return `Functions.encodeUint256(result)`
-
-**Tests using Chainlink local mock (`@chainlink/local`):**
-
-16. `requestFlightStatus` stores correct `requestId → (flightId, date)` mapping
-17. `requestFlightStatus` reverts for non-controller caller
-18. `fulfillRequest` with OnTime response → OracleAggregator updated to OnTime
-19. `fulfillRequest` with Delayed response → OracleAggregator updated to Delayed
-20. `fulfillRequest` with Cancelled response → OracleAggregator updated to Cancelled
-21. `fulfillRequest` with error bytes → `RequestFailed` emitted, OracleAggregator unchanged
-22. `fulfillRequest` with Unknown (0) response → OracleAggregator unchanged, status stays Unknown
-23. `pendingRequests` entry cleared after `fulfillRequest`
-24. Simulate full loop — Controller requests → mock DON fires callback → OracleAggregator updated → next Controller tick settles pool
-
-**Gate:** Full local async loop works. All response types handled. OracleAggregator only
-updated for final statuses.
+**Gate:** Mock server covers all status cases. Derivation logic confirmed correct.
 
 ---
 
-## Phase 11 — Switch JS Source to AeroAPI (FlightAware)
+## Phase 10 — CRE Workflow (Mock API)
 
-Swap the mock server URL for AeroAPI. No contract changes — only the JS source changes,
-deployable via `setJsSource()`.
+Write the CRE workflow pointed at the local mock API server. There is no
+`FunctionsConsumer` contract to write — the entire off-chain integration lives in the
+TypeScript workflow file. No changes to the Controller are needed at this phase; the
+`onlyCREWorkflow` guard is already in place from Phase 7. The only step on the Solidity
+side is calling `setCreWorkflow()` with the deployed workflow address to replace the
+Phase 7 test EOA.
 
-1. Change endpoint to `https://aeroapi.flightaware.com/aeroapi/flights/${flightId}`
-2. Add `x-apikey` header using `secrets.apiKey` — never hardcode the key in source
-3. Add `start` and `end` date query params derived from the Unix timestamp arg
-4. Use `flights[flights.length - 1]` for the most recent entry (handles codeshares and diversions)
-5. Keep identical 45-minute delay threshold and status derivation from Phase 9
-6. Upload API key as DON-encrypted secret via Chainlink `SecretsManager` — note slot and version
-7. Update `subscriptionId` and `donId` in FunctionsConsumer to match target testnet
+**Install CRE tooling:**
 
-**Tests with real AeroAPI:**
+1. Create account at `cre.chain.link`
+2. Install CRE CLI: follow `https://docs.chain.link/cre/getting-started/cli-installation`
+3. Log in: `cre auth login`
+4. Initialise workflow project: `cre workflow init flight-insurance-settlement`
 
-8. Query a known past on-time flight (real IDENT and date) — verify returns `1`
-9. Query a known past delayed flight — verify returns `2`
-10. Query a known past cancelled flight — verify returns `3`
-11. Query a future flight not yet departed — verify returns `0`
-12. Query with invalid IDENT — verify error handled gracefully, returns `0`
-13. Confirm API key is not visible in transaction calldata or emitted events
+**Write the workflow source (`src/workflow.ts`):**
 
-**AeroAPI rate limit note:** Personal tier is ~1,000 requests/month. The settlement loop
-only requests Unknown flights, so volume is bounded. Monitor usage and upgrade tier
-before mainnet.
+5. Import `cron`, `evm`, `http` from `@chainlink/cre-sdk`
+6. Register handler: `cre.Handler(cron.Trigger({ schedule: "0 */10 * * * *" }), onCronTick)`
+7. In `onCronTick`: create `evmClient` and `httpClient` from runtime
+8. Read active flights: `evmClient.read({ contract: ORACLE_AGGREGATOR_ADDRESS, method: "getActiveFlights", args: [] })`
+9. For each flight: read current status via `evmClient.read` — skip if already final
+10. For `Unknown` flights: call mock API via `httpClient.get({ url: "http://localhost:3000/flights/..." })`
+11. Apply `deriveStatus()` — OnTime, Delayed, Cancelled, or Unknown (skip write)
+12. For each final status: `evmClient.write({ contract: ORACLE_AGGREGATOR_ADDRESS, method: "updateFlightStatus", args: [...] })`
+13. After all status writes: `evmClient.write({ contract: CONTROLLER_ADDRESS, method: "checkAndSettle", args: [] })`
+14. Finally: `evmClient.write({ contract: RISK_VAULT_ADDRESS, method: "snapshot", args: [] })`
+15. Wrap every HTTP fetch in try/catch — a failed fetch silently skips that flight, no revert
 
-**Gate:** Real API responses parse correctly. Secrets handling confirmed. Known historical
-outcomes produce correct enum values.
+**Simulate against mock API:**
 
----
+16. Set `ORACLE_AGGREGATOR_ADDRESS`, `CONTROLLER_ADDRESS`, `RISK_VAULT_ADDRESS` in workflow config pointing to a local Anvil fork with all contracts deployed
+17. In the Anvil setup, call `controller.setCreWorkflow(simulatedWorkflowAddress)` so the guard passes during simulation
+18. Run `cre workflow simulate` — confirm it reads active flights from Aggregator, calls mock API, writes status, calls Controller
+19. Test: configure mock for OnTime flight → simulation writes `OnTime` to Aggregator, calls `checkAndSettle`, pool settles
+20. Test: configure mock for Delayed → simulation writes `Delayed`, pool settles as delayed
+21. Test: configure mock for Cancelled → simulation writes `Cancelled`, pool settles as delayed
+22. Test: configure mock for En Route → simulation writes nothing, pool stays active
+23. Test: mock API returns 500 error → simulation catches exception, no write, no revert, pool stays active
+24. Test: no registered flights → `getActiveFlights` returns empty array, workflow completes without error
+25. Test: `checkAndSettle` reverts in simulation if `creWorkflowAddress` is not set correctly → error is visible in simulation output
 
-## Phase 12 — Controller + Chainlink Automation
-
-Update the Controller to implement `AutomationCompatibleInterface`. No other contracts change.
-
-1. Add `automationRegistry` address state variable, set at construction
-2. Replace `onlyKeeper` with `onlyAutomationRegistry` — checks `msg.sender == automationRegistry`
-3. Implement `checkUpkeep(bytes calldata) external view returns (bool, bytes memory)` — returns `(true, "")` always
-4. Implement `performUpkeep(bytes calldata)` — calls `checkAndSettle()` then `riskVault.snapshot()`
-5. Remove `startLoop` and `stopLoop` — upkeep lifecycle managed via Chainlink registry
-6. Add `setAutomationRegistry(address)` owner setter
-
-**Tests:**
-
-7. `checkUpkeep` always returns true
-8. `performUpkeep` calls `checkAndSettle` and `riskVault.snapshot`
-9. Direct call to `checkAndSettle()` from non-registry address reverts
-10. `performUpkeep` from non-registry address reverts
-11. Simulate full loop using Chainlink local Automation mock — mock registry calls `performUpkeep` → settlement executes → snapshot written
-
-**Gate:** Automation interface implemented. Only registry can trigger settlement.
+**Gate:** Simulation works for all four flight outcomes and all error paths.
 
 ---
 
-## Phase 13 — Testnet Deployment
+## Phase 11 — Switch Workflow to AeroAPI
 
-All contracts validated locally. Deploy in this exact order.
+No contract changes. Only the workflow's HTTP target and secret change.
 
-**Deployment:**
+1. Obtain AeroAPI credentials at `flightaware.com/commercial/aeroapi`
+2. Test the endpoint manually via curl:
+   ```bash
+   curl -H "x-apikey: YOUR_KEY" \
+     "https://aeroapi.flightaware.com/aeroapi/flights/AA123?start=2025-06-01T00:00:00Z&end=2025-06-01T23:59:59Z"
+   ```
+3. Examine real response — confirm `scheduled_in`, `actual_in`, `status` field names match mock
+4. Update workflow HTTP URL from mock to AeroAPI endpoint
+5. Add secret: `cre secrets set AEROAPI_KEY --value "your-api-key"`
+6. Update workflow to reference `secrets.AEROAPI_KEY` in request headers — remove hardcoded mock URL
+7. Run `cre workflow simulate` with real AeroAPI credentials
+8. Test: known on-time historical IDENT + date → simulation writes `OnTime`
+9. Test: known delayed historical IDENT + date → simulation writes `Delayed`
+10. Test: known cancelled historical IDENT + date → simulation writes `Cancelled`
+11. Test: future flight not yet landed → simulation writes nothing (Unknown, no error)
+12. Test: invalid IDENT → empty `flights` array → simulation writes nothing
+13. Calculate max requests/day at 10-minute ticks for expected active flight count — confirm within AeroAPI tier limits
+14. Build: `cre workflow build`
 
-1. Deploy `GovernanceModule`
-2. Deploy `RecoveryPool`
-3. Deploy `OracleAggregator` — do NOT call setters yet
-4. Deploy `FunctionsConsumer` with OracleAggregator address, Chainlink Functions router address, DON ID for target testnet
-5. Deploy `RiskVault` with USDC address and zero address as controller placeholder
-6. Deploy `Controller` with all addresses — GovernanceModule, RiskVault, OracleAggregator, FunctionsConsumer, RecoveryPool, Chainlink Automation registry, and initial config values
-
-**Post-deployment wiring:**
-
-7. Call `OracleAggregator.setController(controller)` — one-time, locks forever
-8. Call `OracleAggregator.setOracle(functionsConsumer)` — one-time, locks forever
-9. Call `RiskVault.setController(controller)` — one-time, locks forever
-10. Verify all three setters are now locked — second call reverts on each
-
-**Chainlink setup:**
-
-11. Create a Chainlink Functions subscription at functions.chain.link for the target testnet
-12. Fund subscription with testnet LINK
-13. Add FunctionsConsumer as authorised consumer on the subscription
-14. Upload DON-encrypted API key secret via SecretsManager — note slot and version number
-15. Call `FunctionsConsumer.setJsSource()` with the AeroAPI JS source
-16. Register Controller upkeep in Chainlink Automation App — type: time-based, target: `performUpkeep`, interval: 600 seconds
-17. Fund Automation upkeep with testnet LINK
-18. Set upkeep gas limit to 2,000,000
-
-**Route setup:**
-
-19. Call `GovernanceModule.approveRoute(...)` for at least one testnet route
-
-**Verification:**
-
-20. Call `isSolventForNewPurchase` — confirm returns false with no capital
-21. Deposit test USDC as underwriter via RiskVault
-22. Call `isSolventForNewPurchase` — confirm returns true
-23. Approve USDC and buy insurance as traveler via Controller
-24. Confirm FlightPool deployed and registered in OracleAggregator
-25. Wait for Automation tick — confirm `performUpkeep` fires in Automation dashboard logs
-26. Confirm `RequestSent` event emitted on FunctionsConsumer for the Unknown flight
-27. Wait for `fulfillRequest` callback — confirm `StatusUpdated` event emitted
-28. Confirm OracleAggregator returns non-Unknown status for the flight
-29. Wait for next Automation tick — confirm settlement executes
-30. If OnTime: confirm premiums arrived in RiskVault and share price increased
-31. If Delayed: confirm traveler can call `claim()` and receives payoff
-32. Confirm `deregisterFlight` called — flight removed from OracleAggregator active list
-33. Confirm `activeFlightCount` decreased by 1
-
-**Gate:** Full end-to-end cycle completes on testnet. Both Chainlink products verified live.
+**Gate:** Real AeroAPI responses parse correctly for all four outcomes. Secrets confirmed. Rate limits acceptable.
 
 ---
 
-## Phase 14 — Frontend
+## Phase 12 — Testnet Deployment
 
-Build after testnet deployment. All contract addresses are known and the system is
-verified live. Connect the frontend to the deployed testnet contracts throughout this phase.
+**Deploy Solidity contracts:**
 
-**Setup:**
+1. Deploy `GovernanceModule` — no dependencies
+2. Deploy `RecoveryPool` — no dependencies
+3. Deploy `OracleAggregator` — no dependencies, do NOT call setters yet
+4. Deploy `RiskVault` — pass USDC address and zero address as Controller placeholder
+5. Deploy `Controller` — pass all contract addresses and initial config values
+   (`minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow`)
+   Note: `creWorkflowAddress` is not required at construction — set via `setCreWorkflow()` after the workflow is deployed
 
-1. Initialise project — React / Next.js, TypeScript, Tailwind
-2. Install `viem` + `wagmi` for contract interaction
-3. Add wallet connection — MetaMask and WalletConnect at minimum
-4. Generate TypeScript ABIs from deployed contract artifacts for all 7 contracts
-5. Create a config file with all deployed contract addresses per network (testnet + future mainnet)
-6. Create contract hook wrappers — `useRiskVault`, `useController`, `useGovernanceModule`, `useFlightPool`, `useOracleAggregator`
-7. Add network detection — warn user if connected to the wrong network
+**Wire Solidity contracts:**
 
-**Route browsing page:**
+6. Call `OracleAggregator.setController(controller)` — one-time, locks forever
+7. Call `RiskVault.setController(controller)` — one-time, locks forever
 
-8. Fetch all approved routes from `GovernanceModule.getApprovedRoutes()`
-9. Display route list — flight ID, origin, destination, premium, payoff
-10. For each route, call `isSolventForNewPurchase` and show availability state
-11. Show "sold out" badge if solvency check fails
-12. Add search and filter by origin, destination, or flight ID
+**Deploy and activate the CRE workflow:**
 
-**Buy insurance flow:**
+8. Update workflow config with testnet contract addresses (`ORACLE_AGGREGATOR_ADDRESS`, `CONTROLLER_ADDRESS`, `RISK_VAULT_ADDRESS`)
+9. Update RPC URL in workflow config to testnet RPC endpoint
+10. Run `cre workflow simulate` one final time against testnet contracts
+11. Deploy workflow: `cre workflow deploy ./dist/workflow.wasm`
+12. Activate workflow: `cre workflow activate <workflow-id>`
+13. Read the workflow's forwarder/signer address: `cre workflow info <workflow-id>`
 
-13. Date picker for flight date — enforce minimum lead time (read `minimumLeadTime` from Controller)
-14. Check if wallet has already bought for this flight+date — read `hasBought(address)` from pool if pool exists
-15. Show premium and payoff clearly before any wallet interaction
-16. Step 1: `USDC.approve(controller, premium)` — show pending state during tx
-17. Step 2: `Controller.buyInsurance(...)` — show pending state during tx
-18. On success show confirmation with pool address and claim expiry date
-19. Handle and display revert reasons clearly — undercollateralised, already purchased, route disabled
+**Wire CRE workflow address into Solidity contracts:**
 
-**Traveler dashboard:**
+14. Call `OracleAggregator.setOracle(workflowAddress)` — one-time, locks forever
+15. Call `Controller.setCreWorkflow(workflowAddress)` — owner only
 
-20. Show all active policies for connected wallet — read `hasBought(address)` across known pools
-21. For each policy show — flight ID, date, premium paid, payoff amount, settlement state
-22. Fetch flight status from `OracleAggregator.getFlightStatus()` for each active pool
-23. Show claim button if `canClaim(address)` returns true
-24. Show claim expiry countdown for settled delayed pools
-25. Execute `FlightPool.claim()` — show pending, success, and error states
-26. After successful claim, update policy state to "Claimed"
-27. Show "Expired — missed claim window" for policies past expiry
+**Approve routes and fund vault:**
 
-**Underwriter dashboard:**
+16. Call `GovernanceModule.approveRoute()` for at least two testnet routes
+17. Mint testnet USDC to underwriter address
+18. Approve RiskVault for USDC spend
+19. Call `RiskVault.deposit()` as underwriter
 
-28. Show current USDC balance and share balance for connected wallet
-29. Show current share price — `totalManagedAssets() / totalShares()`
-30. Show estimated current value of holdings — `previewRedeem(shares)`
-31. Show immediately withdrawable value — `previewRedeemFree(shares)` with explanation if lower
-32. Show TVL, locked capital, and free capital
-33. Deposit flow — input amount, approve USDC, then `riskVault.deposit(amount)`
-34. Withdraw flow — input share amount, call `riskVault.withdraw(shares)`
-35. If withdrawal is immediate — show credited balance and prompt to `collect()`
-36. If withdrawal is queued — show queue position
-37. Show `claimableBalance` if non-zero with a `collect()` button
-38. Cancel queued withdrawal — `cancelWithdrawal(queueIndex)` with confirmation
+**Verify system health:**
 
-**APY chart:**
+20. Confirm `aggregator.authorizedOracle()` equals CRE workflow address
+21. Confirm `controller.creWorkflowAddress()` equals CRE workflow address
+22. Call `isSolventForNewPurchase()` — confirm true after deposit
+23. Call `getApprovedRoutes()` — confirm routes visible
+24. Buy insurance as traveler — confirm pool deployed, premium transferred
+25. Check `activeFlightCount()` — should be 1
+26. Check `OracleAggregator.getFlightStatus()` — should be `Unknown`
+27. Wait for first workflow tick — check `cre workflow logs <workflow-id>` for execution
+28. Confirm `StatusUpdated` event emitted on OracleAggregator (if flight has a final status)
+29. Wait for next tick — confirm `checkAndSettle()` called and settlement executes
+30. If OnTime: confirm premiums in RiskVault, share price increased, `activeFlightCount` decremented
+31. If Delayed: confirm pool claimable, call `claim()` as traveler, confirm payoff received
+32. Confirm `totalPoliciesSold`, `totalPremiumsCollected`, `totalPayoutsDistributed` all correct
 
-39. Fetch full price history — `priceHistoryLength()` then paginate `getPriceSnapshot(index)` calls
-40. Plot share price over time as a line chart
-41. Compute and display 7-day APY — find snapshot nearest to 7 days ago, annualise the difference
-42. Compute and display 30-day APY — same approach for 30-day window
-43. Handle sparse snapshot data gracefully — note gaps without crashing
-44. Show "insufficient history" state if fewer than 7 days of snapshots exist
-
-**Protocol stats page:**
-
-45. Lifetime policies sold — `totalPoliciesSold()`
-46. Lifetime premiums collected — `totalPremiumsCollected()`
-47. Lifetime payouts distributed — `totalPayoutsDistributed()`
-48. Total active flights — `activeFlightCount()`
-49. Current TVL — `totalManagedAssets()`
-50. Locked vs free capital as a visual ratio bar
-51. Current share price with trend vs previous day snapshot
-
-**Active flights panel:**
-
-52. Fetch all active pools via `getActivePools()`
-53. For each pool show — flight ID, date, buyer count, total premiums held, total liability, current oracle status
-54. Show settlement state — Pending / Settled OnTime / Settled Delayed
-55. Link to relevant FlightPool so travelers can navigate directly to claim
-
-**Admin panel (owner / admin wallets only):**
-
-56. Detect if connected wallet is owner or admin via GovernanceModule — hide panel for other wallets
-57. Approve new route — form with flightId, origin, destination, premium, payoff
-58. Validate premium < payoff client-side before submitting
-59. Disable route — select from active routes list, confirm before submitting
-60. Update route terms — select route, input new values, show warning that only future pools are affected
-61. Add / remove admin — input address, confirm action
-62. Show current `minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow` with edit controls (owner only)
-
-**Operational monitoring panel (owner only):**
-
-63. Show last `performUpkeep` timestamp — alert if stale beyond 15 minutes
-64. Show `balanceSanityCheck()` value — alert prominently if non-zero
-65. Show list of recent `RequestFailed` events on FunctionsConsumer
-66. Show list of recent `PayoutFailed` events on active FlightPools
-67. Show RecoveryPool USDC balance with list of source pools and amounts
-68. Show LINK balance note — direct owner to Chainlink dashboards for Automation and Functions
-
-**Polish and edge cases:**
-
-69. Loading states on all async reads
-70. Optimistic UI updates on transactions — revert to previous state if transaction fails
-71. Mobile responsive layout
-72. All USDC values displayed with 6-decimal precision in human-readable format
-73. Transaction history for connected wallet — deposits, withdrawals, purchases, claims
-74. Deep links to specific pools — `?pool=0x...` loads pool state directly
-75. Handle MetaMask rejection gracefully — no success state shown on user cancel
-76. Empty states for all lists — "no active policies", "no active flights", etc.
-
-**Gate:** All user flows completable end-to-end on testnet. Admin panel functional.
-Monitoring panel shows live contract state.
+**Gate:** Full end-to-end cycle completes on testnet. CRE workflow verified live.
 
 ---
 
-## Phase 15 — Mainnet
+## Phase 13 — Frontend
 
-Repeat Phase 13 on mainnet with the following additions:
+Build and validate the frontend against testnet contracts before mainnet.
 
-1. Confirm all access control modifiers active — none commented out
-2. Confirm AeroAPI production tier subscription active with sufficient monthly quota
-3. Review and set final production values for `minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow`
-4. Review upkeep gas limit against observed testnet gas usage before registering
-5. Set up alerts for Automation LINK balance falling below a safe threshold
-6. Set up alerts for Functions subscription LINK balance falling below a safe threshold
-7. Set up event indexing for `RequestFailed`, `PayoutFailed`, `SettledDelayed`, `SettledNotDelayed`
-8. Update frontend config to point at mainnet contract addresses
-9. Confirm `balanceSanityCheck()` returns zero before any user activity
-10. Approve initial production routes via GovernanceModule
+**Setup and wallet connection:**
+
+1. Set up project with wallet connection library (wagmi / viem / ethers.js)
+2. Add ABIs for all six contracts (GovernanceModule, RiskVault, FlightPool, Controller, OracleAggregator, RecoveryPool)
+3. Add testnet contract addresses to environment config
+4. Implement wallet connect and disconnect
+5. Implement chain detection — prompt user to switch if on wrong network
+6. Read and display connected wallet address and USDC balance
+7. Build USDC approval helper — check current allowance, prompt `approve()` if insufficient
+
+**Underwriter — deposit:**
+
+8. Read and display current share price — `totalManagedAssets / totalShares`
+9. Read and display vault TVL — `totalManagedAssets()`
+10. Read and display locked vs free capital — `lockedCapital()`, `freeCapital()`
+11. Read and display connected wallet's share balance — `shares[address]`
+12. Build deposit amount input — validate > 0, show estimated shares to be received
+13. On submit — check allowance, prompt approval if needed, call `RiskVault.deposit(amount)`
+14. Show pending transaction state
+15. Refresh share balance and TVL after confirmation
+
+**Underwriter — withdrawal:**
+
+16. Build share amount input — validate <= owned shares
+17. Show `previewRedeem(shares)` — total redemption value
+18. Show `previewRedeemFree(shares)` alongside — label difference as locked capital
+19. On submit — call `RiskVault.withdraw(shares)`
+20. Handle immediate path: show success, refresh `claimableBalance`
+21. Handle queue path: show queue position from `WithdrawQueued` event, store `queueIndex`
+22. Show cancel button if pending withdrawal exists — call `cancelWithdrawal(queueIndex)`
+23. Read and display `claimableBalance(address)` — show as collectible balance
+24. Show collect button when `claimableBalance > 0` — call `RiskVault.collect()`
+25. Refresh balances after collect confirms
+
+**Underwriter — APY:**
+
+26. Read `priceHistoryLength()` to get snapshot count
+27. Binary search for snapshot nearest to 7 days ago using `getPriceSnapshot(index)`
+28. Compute 7-day APY: `((currentPrice / price7dAgo) - 1) × (365 / 7) × 100`
+29. Repeat binary search for snapshot nearest to 30 days ago
+30. Compute 30-day APY with same formula
+31. Display both figures with clear label — realised historical yield, not guaranteed
+
+**Route browsing:**
+
+32. Read `getApprovedRoutes()` — display all active routes with premium and payoff
+33. Build date picker for each route — traveler selects departure date
+34. On date select — call `getPoolAddress(flightId, date)` — zero address means pool not yet deployed
+35. Call `isSolventForNewPurchase(flightId, date)` — show capacity warning if false
+36. If pool exists — read and display `buyerCount()` and pool address
+37. Display premium cost and payoff prominently before purchase action
+
+**Traveler — buy insurance:**
+
+38. Show selected route, date, premium, payoff in confirmation summary
+39. Check `hasBought[address]` on pool if it exists — show "already purchased" message
+40. On confirm — check USDC allowance for Controller, prompt approval if needed
+41. Call `Controller.buyInsurance(flightId, origin, destination, date)`
+42. Show pending transaction state
+43. On success — show policy summary with flight, date, payoff amount
+
+**Traveler — claim:**
+
+44. Query all FlightPools where connected address has `hasBought = true`
+45. Filter for pools where `outcome = Delayed` and `claimed[address] = false`
+46. Display claimable pools list with payoff amount and `claimExpiry` countdown
+47. Show claim button for each eligible pool — call `FlightPool.claim()`
+48. Show pending state, confirm payoff received on success
+49. Mark as claimed after transaction confirms
+50. After expiry, replace claim button with "claim window closed" message
+
+**Flight status display:**
+
+51. Read `OracleAggregator.getFlightStatus(flightId, date)` for each active pool
+52. Map enum to labels — Unknown / On Time / Delayed / Cancelled
+53. Show last status update timestamp from `StatusUpdated` event on OracleAggregator
+54. For Unknown flights, display "awaiting oracle data" — next check is driven by CRE workflow;
+    use CRE platform logs for operational visibility (no on-chain timestamp to query)
+55. Show settlement status — Pending / Settled — from `isSettled` on FlightPool
+
+**Protocol dashboard:**
+
+56. Read and display `totalPoliciesSold()`
+57. Read and display `totalPremiumsCollected()` — format as USDC
+58. Read and display `totalPayoutsDistributed()` — format as USDC
+59. Read and display `activeFlightCount()`
+60. Build active flights table from `getActivePools()` — columns: flightId, date, buyers, status
+61. Display workflow health note: "Settlement runs every 10 minutes via Chainlink CRE"
+    (operational monitoring is via `cre workflow logs`, not an on-chain timestamp)
+
+**Error and edge case handling:**
+
+62. Wallet not connected — show connect prompt on any action button
+63. Insufficient USDC balance — show message before approval step
+64. `isSolventForNewPurchase = false` — disable buy button, show capacity message
+65. Expired claim window — disable claim button, show "sweep available" if unclaimed balance remains
+66. Transaction reverted — extract and display revert reason where possible
+67. RPC error — retry logic with user-visible error state
+68. Pool has zero buyers — confirm UI handles this gracefully
+
+**Final frontend validation on testnet:**
+
+69. Complete full underwriter deposit → collect cycle through the UI end to end
+70. Complete full traveler buy → claim cycle through the UI end to end
+71. Verify 7-day APY calculation matches manual calculation from snapshot data
+72. Verify all oracle status updates appear in UI within two CRE workflow ticks
+73. Test on mobile viewport
+74. Test with at least two wallet types (e.g. MetaMask and WalletConnect)
+
+**Gate:** All flows complete on testnet without errors. Both user cycles verified through the UI.
+
+---
+
+## Phase 14 — Mainnet
+
+1. Confirm all access control modifiers active — none commented out for testing
+2. Confirm AeroAPI production tier subscription active and within rate limits for expected volume
+3. Re-run `cre workflow simulate` against mainnet contract addresses before deploy
+4. Deploy all Solidity contracts in the exact order from Phase 12 steps 1–5
+5. Wire Solidity contracts: `setController` on Aggregator and Vault (Phase 12 steps 6–7)
+6. Update CRE workflow config with mainnet RPC and mainnet contract addresses
+7. Build workflow: `cre workflow build`
+8. Deploy workflow to mainnet DON: `cre workflow deploy ./dist/workflow.wasm`
+9. Activate: `cre workflow activate <workflow-id>`
+10. Read mainnet workflow forwarder address: `cre workflow info <workflow-id>`
+11. Wire CRE address into Solidity contracts: `setOracle` and `setCreWorkflow` (Phase 12 steps 14–15)
+12. Update frontend environment config to mainnet contract addresses
+13. Approve initial production routes via GovernanceModule
+14. Set `minimumSolvencyRatio`, `minimumLeadTime`, `claimExpiryWindow` to production values
+15. Confirm first CRE workflow tick executes on mainnet via `cre workflow logs`
+16. Monitor `balanceSanityCheck()` on RiskVault — alert if non-zero
+17. Index `StatusUpdated` events on OracleAggregator — alert if a registered flight shows no update > 24 hours after departure date
+18. Index `PayoutFailed` events on FlightPool — alert on any occurrence
+19. Verify first live end-to-end cycle on mainnet before publicising
+20. Publish disclosure to participants that CRE workflow deployment is in Early Access
 
 ---
 
@@ -698,14 +744,13 @@ Repeat Phase 13 on mainnet with the following additions:
 | 2 | RecoveryPool | Deposit + withdraw + access control |
 | 3 | GovernanceModule | Route lifecycle + admin management |
 | 4 | RiskVault | Capital accounting + queue + snapshots |
-| 5 | OracleAggregator | Status lifecycle + access control |
+| 5 | OracleAggregator | Status lifecycle + access control + `getActiveFlights` |
 | 6 | FlightPool | Settlement + claim + expiry |
-| 7 | Controller (no Chainlink) | Full end-to-end lifecycle both outcomes |
+| 7 | Controller | Full end-to-end both outcomes, `onlyCREWorkflow` guard verified with test EOA |
 | 8 | Integration tests | Multi-flight + queue + edge cases |
 | 9 | Mock API server | Status derivation logic validated |
-| 10 | FunctionsConsumer + JS (mock API) | Full local async loop works |
-| 11 | JS source → AeroAPI | Real API responses parse correctly |
-| 12 | Controller + Automation | Interface implemented, registry-only access |
-| 13 | Testnet deployment | Live end-to-end cycle complete |
-| 14 | Frontend | All user flows complete on testnet |
-| 15 | Mainnet | Production |
+| 10 | CRE workflow (mock API) | Simulation works all outcomes; `setCreWorkflow` wired |
+| 11 | Workflow → AeroAPI | Real API responses parse correctly for all outcomes |
+| 12 | Testnet deployment | Live end-to-end cycle complete, CRE workflow active and writing on-chain |
+| 13 | Frontend | All flows verified on testnet through UI |
+| 14 | Mainnet | Production, Early Access disclosure made |

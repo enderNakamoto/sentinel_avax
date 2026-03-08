@@ -18,7 +18,7 @@ The agent uses these files to resume work seamlessly across sessions without los
 |---|---|
 | `specs/progress.md` | High-level dashboard — one row per phase, shows status at a glance |
 | `specs/phases/phase-{NN}-{slug}.md` | Per-phase living document — subtask checklist, pre-work notes, work log, decisions |
-| `docs/workflow.md` | This file — explains the workflow itself |
+| `specs/workflow.md` | This file — explains the workflow itself |
 | `~/.claude/projects/.../memory/MEMORY.md` | Agent's persistent memory — loaded at start of every session |
 
 ## Claude Commands Structure
@@ -242,3 +242,4 @@ type[, type, ...]: short imperative description (≤50 chars)
 | 2026-03-08 | Added git commit conventions (skills/git.md) and /commit command — types: feat, fix, refactor, test, docs, workflow, chore, deploy. Multi-type commits supported. Always requires user approval before committing. |
 | 2026-03-08 | Updated /prime to actively read and interpret git log — last 30 commits, files added per commit, cross-validation against progress.md. Git history is now treated as ground truth for build progress. |
 | 2026-03-08 | Added Phase 0 (Foundry init) and Phase 13 (Frontend init). Renumbered old Phase 13→14 (Frontend) and Phase 14→15 (Mainnet). Now 16 phases total (0–15). Added Reown AppKit skill (skills/reown.md). |
+| 2026-03-08 | Moved workflow.md from docs/ to specs/ — it belongs with the project specs, not docs. Restored docs/aero_api.md, docs/avalanche.md, docs/chainlink-cre.md — required by skill deep-dive layers. |

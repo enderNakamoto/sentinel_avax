@@ -41,7 +41,13 @@ Based on the structure, identify and read:
 - Key model/schema definitions
 - Important service or controller files
 
-### 5. Understand Current State
+### 5. Read Project Progress
+
+- Read `specs/progress.md` — identify current phase and its status
+- If a phase is `in_progress` or `paused`, read its phase file from `specs/phases/` — read all checked/unchecked subtasks and the full Work Log to understand exactly where work stopped
+- Note any blockers or next steps recorded in the Work Log
+
+### 6. Understand Current State
 
 Check recent activity:
 !`git log -10 --oneline`
@@ -83,5 +89,10 @@ Provide a concise summary covering:
 - Active branch
 - Recent changes or development focus
 - Any immediate observations or concerns
+
+### Build Progress
+- Current phase and its status (planned / in_progress / paused / complete)
+- If in_progress or paused: which subtasks are done, which remain, and what the Work Log says to do next
+- If all phases complete: note that
 
 **Make this summary easy to scan - use bullet points and clear headers.**

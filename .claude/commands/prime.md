@@ -104,4 +104,15 @@ Provide a concise summary covering:
 - What was built in the last session based on the most recent commits
 - Suggested next action ("ready to /plan-phase N", "resume phase N at subtask X", etc.)
 
+### Workflow (quick reference)
+```
+/plan-phase N      → generates phase plan file, you fill in Pre-work Notes
+/start-phase N     → agent reads your notes and begins implementation
+                     session ends mid-phase? just /prime next time to resume
+/commit            → draft + review commit message, you approve, then commits
+/complete-phase N  → you validate work, phase closed, memory updated
+```
+Skills auto-load when relevant: `aero-api` · `avalanche` · `chainlink-cre` · `reown` · `git`
+Full workflow docs: `specs/workflow.md`
+
 **Make this summary easy to scan - use bullet points and clear headers.**

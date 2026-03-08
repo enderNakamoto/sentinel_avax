@@ -111,11 +111,23 @@ Completed: —
 > Populated by /complete-phase. Do not edit manually.
 ```
 
-### 4. Update progress.md
+### 4. Ask the user clarifying questions
+
+Before writing the file, review the subtasks and architecture context for this phase. Identify anything that is ambiguous, has multiple valid design choices, or depends on decisions not already recorded in architecture.md or memory. Ask the user these questions directly — wait for answers before proceeding to write the file.
+
+Examples of things worth asking about:
+- Design choices that affect the contract interface (e.g. naming, parameter types, error style)
+- Whether to extend an OZ base contract or implement from scratch
+- Edge cases where the architecture doc is silent
+- Any constraints the user may want to enforce (gas limits, upgrade patterns, access control style)
+
+Do not ask about things that are already clearly specified in architecture.md, development_list.md, or memory. Keep questions concise — one to three questions is typical. If nothing is genuinely ambiguous, skip this step and proceed directly to writing the file.
+
+### 5. Update progress.md
 
 In the Phase Files table, change the phase row's Status column from `not generated` to `planned`.
 
-### 5. Tell the user what to do next
+### 6. Tell the user what to do next
 
 Output a short message:
 - Confirm the file was created at its path

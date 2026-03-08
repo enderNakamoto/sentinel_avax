@@ -14,7 +14,17 @@ The user provides a phase number as the argument (e.g. `/start-phase 4`).
 
 ## Process
 
-### 1. Read all context
+### 1. Ask the user to clear context
+
+Before reading anything, output this message and stop:
+
+> **Before we begin — please run `/clear` to start a fresh context.**
+> Context pollution from earlier planning or unrelated files can cause the agent to drift or reuse stale decisions mid-phase.
+> After clearing, run `/start-phase {N}` again and implementation will begin immediately.
+
+Do not proceed further until the user has cleared and re-run the command. If the user has already cleared (i.e. this is the re-run after a `/clear`), the conversation will have no prior messages — in that case, skip this step and proceed directly to step 2.
+
+### 2. Read all context (after /clear)
 
 - Read `specs/progress.md` — confirm phase status is `planned`
 - Read the phase file at `specs/phases/phase-{NN}-{slug}.md`
@@ -25,7 +35,7 @@ The user provides a phase number as the argument (e.g. `/start-phase 4`).
 
 If the phase status is not `planned`, stop and tell the user. Do not begin work on a phase that is already `in_progress` or `complete`.
 
-### 2. Update the phase file
+### 3. Update the phase file
 
 - Change `Status: planned` to `Status: in_progress`
 - Set `Started: {today's date}`
@@ -35,13 +45,13 @@ If the phase status is not `planned`, stop and tell the user. Do not begin work 
   Starting phase. Pre-work notes reviewed.
   ```
 
-### 3. Update progress.md
+### 4. Update progress.md
 
 - Change the phase row Status from `planned` to `in_progress`
 - Set the Started date
 - Update `Current Phase:` in the header
 
-### 4. Implement the phase
+### 5. Implement the phase
 
 Work through the subtasks in order. As each subtask is completed:
 - Check it off in the phase file: `- [ ]` → `- [x]`
@@ -53,7 +63,7 @@ After each logical group of subtasks (or at natural stopping points), append to 
 - Files created or modified (also add to Files Created/Modified section)
 - Where to resume if interrupted
 
-### 5. Handle the gate
+### 6. Handle the gate
 
 After all subtasks are complete, check the gate condition. If the gate passes:
 - Add a note to the Work Log: "All subtasks complete. Gate condition met. Ready for /complete-phase."

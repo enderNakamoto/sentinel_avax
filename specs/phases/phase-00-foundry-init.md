@@ -1,8 +1,8 @@
 # Phase 0 — Foundry Project Init
 
-Status: in_progress
+Status: complete
 Started: 2026-03-08
-Completed: —
+Completed: 2026-03-08
 
 ---
 
@@ -43,7 +43,7 @@ None — this is the first phase. No prior contracts or components required.
 - [x] 10. Create a `/frontend` directory at the project root with a single `README.md` placeholder noting it will be scaffolded in Phase 13 and will use wagmi CLI to read ABIs from `../contracts/out/`
 - [x] 11. Run `forge build` from `contracts/` — confirm zero errors
 - [x] 12. Run `forge test` from `contracts/` — confirm zero tests, zero failures (empty suite passes)
-- [ ] 13. Commit the initialized project structure
+- [x] 13. Commit the initialized project structure
 
 ### Gate
 
@@ -65,36 +65,54 @@ Starting phase. Pre-work notes reviewed.
 - Task 9: `contracts/script/Deploy.s.sol` scaffold created — empty run() body, logic deferred to Phase 12.
 - Task 10: `frontend/README.md` placeholder created explaining Phase 13 scaffolding and wagmi CLI ABI bridge.
 - Tasks 11–12: `forge build` — zero errors (16 files compiled). `forge test` — zero tests, zero failures. Gate condition met.
-- Task 13: Pending — commit to be made now.
+- Task 13: Committed in two commits — `add4bc9` (Foundry init) and `0e2a2c9` (root README + overview.md removal).
+
+### Session 2026-03-08 — Completed
+Phase validated by user. All gate conditions met.
 
 ---
 
 ## Files Created / Modified
 
 - `contracts/` — new directory, Foundry project root
-- `contracts/foundry.toml` — full Avalanche config with OZ remapping
-- `contracts/src/` — empty (stubs removed)
-- `contracts/test/` — empty (stubs removed)
-- `contracts/script/Deploy.s.sol` — empty scaffold
+- `contracts/foundry.toml` — full Avalanche config with OZ remapping, Routescan verifier, ci profile
+- `contracts/src/` — empty (stubs removed), ready for Phase 1
+- `contracts/test/` — empty (stubs removed), ready for Phase 1
+- `contracts/script/Deploy.s.sol` — empty scaffold, logic added in Phase 12
 - `contracts/lib/forge-std/` — installed by forge init
-- `contracts/lib/openzeppelin-contracts/` — v5.6.1 installed
+- `contracts/lib/openzeppelin-contracts/` — v5.6.1 installed as git submodule
 - `contracts/.env.example` — placeholder env keys
 - `frontend/README.md` — placeholder for Phase 13
 - `.gitignore` — updated with contracts and frontend entries
+- `README.md` — root project README (added same session, not strictly phase 0 scope)
+- `specs/overview.md` — deleted, content consolidated into README.md
 
 ---
 
 ## Decisions Made
 
 - **Foundry in `/contracts/`** — not project root. Clean separation from `specs/`, `docs/`, `frontend/`.
-- **`contracts/out/` stays in `contracts/`** — not redirected into frontend. wagmi CLI will read it from `../contracts/out/` in Phase 14.
-- **OpenZeppelin v5.6.1** — latest stable at time of install. All contracts will target this version.
-- **`forge install` no longer accepts `--no-commit`** — the flag was removed from the current Foundry version. Install works without it.
-- **`[profile.ci]` added** — fuzz runs = 1000, invariant runs = 256. Standard for production contracts.
-- **`via_ir = false`** — disabled by default. Enable if stack-too-deep errors occur in complex contracts (RiskVault or Controller are most likely candidates).
+- **`contracts/out/` stays in `contracts/`** — wagmi CLI reads from `../contracts/out/` in Phase 14. No `out` redirect in `foundry.toml`.
+- **OpenZeppelin v5.6.1** — latest stable at time of install. All contracts target this version.
+- **`forge install --no-commit` flag removed** — current Foundry version dropped this flag. Install works without it; note this in future phases.
+- **`[profile.ci]` added** — fuzz runs = 1000, invariant runs = 256.
+- **`via_ir = false`** — disabled by default. Enable if stack-too-deep errors occur (most likely in RiskVault or Controller).
 
 ---
 
 ## Completion Summary
 
-> Populated by /complete-phase. Do not edit manually.
+**What was built:**
+Foundry project initialised in `contracts/` with OpenZeppelin v5.6.1, full Avalanche C-Chain config (solc 0.8.20, london EVM, optimizer, Routescan verifier URLs for Fuji and mainnet), OZ remapping, env example, and gitignore coverage. Frontend placeholder directory created. `forge build` and `forge test` both pass clean.
+
+**Key decisions locked in:**
+- Solidity 0.8.20, EVM london, optimizer 200 runs — these are fixed for all contracts in this project
+- OZ v5.6.1 — all contracts import from this version
+- ABI bridge pattern: wagmi CLI reads `contracts/out/` in Phase 14, no redirect needed
+
+**What Phase 1 needs to know:**
+- All contract source files go in `contracts/src/`
+- All test files go in `contracts/test/`
+- Import OZ with `@openzeppelin/contracts/...` — remapping is configured
+- Run all forge commands from inside `contracts/`
+- `forge install` no longer accepts `--no-commit`

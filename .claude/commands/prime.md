@@ -20,7 +20,7 @@ On Linux, run: `tree -L 3 -I 'node_modules|__pycache__|.git|dist|build'`
 
 ### 2. Read Core Documentation
 
-- Read the overview.md in specs folder
+- Read the README.md at the project root
 - Read the architecture.md in specs folder or any archicture documentation
 - Read the PRD.md or similar spec file
 - Read CLAUDE.md or similar global rules file

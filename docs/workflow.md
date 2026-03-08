@@ -240,3 +240,5 @@ type[, type, ...]: short imperative description (≤50 chars)
 | 2026-03-08 | Initial workflow established — progress.md, per-phase files, /plan-phase, /start-phase, /complete-phase commands created |
 | 2026-03-08 | Added skills (aero-api, avalanche, chainlink-cre) with progressive disclosure. Moved to `.claude/commands/skills/` subfolder to separate auto-triggered skills from explicit commands |
 | 2026-03-08 | Added git commit conventions (skills/git.md) and /commit command — types: feat, fix, refactor, test, docs, workflow, chore, deploy. Multi-type commits supported. Always requires user approval before committing. |
+| 2026-03-08 | Updated /prime to actively read and interpret git log — last 30 commits, files added per commit, cross-validation against progress.md. Git history is now treated as ground truth for build progress. |
+| 2026-03-08 | Added Phase 0 (Foundry init) and Phase 13 (Frontend init). Renumbered old Phase 13→14 (Frontend) and Phase 14→15 (Mainnet). Now 16 phases total (0–15). Added Reown AppKit skill (skills/reown.md). |

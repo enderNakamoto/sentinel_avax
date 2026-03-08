@@ -47,13 +47,20 @@ Based on the structure, identify and read:
 - If a phase is `in_progress` or `paused`, read its phase file from `specs/phases/` — read all checked/unchecked subtasks and the full Work Log to understand exactly where work stopped
 - Note any blockers or next steps recorded in the Work Log
 
-### 6. Understand Current State
+### 6. Read Git History
 
-Check recent activity:
-!`git log -10 --oneline`
+Run in parallel:
+- `git log --oneline -30` — last 30 commits
+- `git log --oneline --diff-filter=A --name-only --format="%h %s"` — files added per commit (shows what was built when)
+- `git status` — any uncommitted work in progress
 
-Check current branch and status:
-!`git status`
+**Extract from the log:**
+- Which phases have completion commits (e.g. `feat, test, docs: complete phase 3`) — treat these as ground truth even if progress.md hasn't been updated
+- What the most recent commit was — this tells you what happened last session
+- Any commits since the last phase completion — these are mid-phase or workflow-only changes
+- Cross-check against `progress.md`: if git shows phase N complete but progress.md shows it as in_progress, trust git and note the discrepancy
+
+**The git log is the hardest evidence of what has actually been built.** Use it to validate and fill gaps in the progress files.
 
 ## Output Report
 
@@ -86,13 +93,15 @@ Provide a concise summary covering:
 - Testing approach
 
 ### Current State
-- Active branch
-- Recent changes or development focus
-- Any immediate observations or concerns
+- Active branch and any uncommitted changes
+- Most recent commit — what it was and when
+- Any discrepancies between git history and progress.md
 
 ### Build Progress
 - Current phase and its status (planned / in_progress / paused / complete)
 - If in_progress or paused: which subtasks are done, which remain, and what the Work Log says to do next
-- If all phases complete: note that
+- Phases confirmed complete by git history (list their completion commits)
+- What was built in the last session based on the most recent commits
+- Suggested next action ("ready to /plan-phase N", "resume phase N at subtask X", etc.)
 
 **Make this summary easy to scan - use bullet points and clear headers.**

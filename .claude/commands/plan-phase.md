@@ -29,20 +29,22 @@ specs/phases/phase-{NN}-{slug}.md
 where `{NN}` is zero-padded phase number and `{slug}` is a short kebab-case name.
 
 Phase slugs:
-- 1 → phase-01-mockusdc
-- 2 → phase-02-recoverypool
-- 3 → phase-03-governancemodule
-- 4 → phase-04-riskvault
-- 5 → phase-05-oracleaggregator
-- 6 → phase-06-flightpool
-- 7 → phase-07-controller
-- 8 → phase-08-integration-tests
-- 9 → phase-09-mock-api-server
+- 0  → phase-00-foundry-init
+- 1  → phase-01-mockusdc
+- 2  → phase-02-recoverypool
+- 3  → phase-03-governancemodule
+- 4  → phase-04-riskvault
+- 5  → phase-05-oracleaggregator
+- 6  → phase-06-flightpool
+- 7  → phase-07-controller
+- 8  → phase-08-integration-tests
+- 9  → phase-09-mock-api-server
 - 10 → phase-10-cre-workflow-mock
 - 11 → phase-11-cre-workflow-aeroapi
 - 12 → phase-12-testnet
-- 13 → phase-13-frontend
-- 14 → phase-14-mainnet
+- 13 → phase-13-frontend-init
+- 14 → phase-14-frontend
+- 15 → phase-15-mainnet
 
 ### 3. Generate the phase file
 

@@ -7,6 +7,34 @@ against a stub that will later change.
 
 ---
 
+## Phase 0 — Foundry Project Initialization
+
+Set up the Solidity project structure before writing any contracts. Everything from Phase 1 onward depends on this foundation being correct.
+
+1. Run `forge init` in the project root (or a dedicated `contracts/` subdirectory if separating from the frontend)
+2. Confirm default structure exists: `src/`, `test/`, `script/`, `lib/`
+3. Install OpenZeppelin contracts: `forge install OpenZeppelin/openzeppelin-contracts --no-commit`
+4. Verify OpenZeppelin remapping works — add to `foundry.toml` or `remappings.txt`:
+   ```
+   @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+   ```
+5. Configure `foundry.toml` for Avalanche C-Chain (read `docs/avalanche.md` §3 and §9):
+   - `solc = "0.8.20"`
+   - `evm_version = "london"`
+   - `optimizer = true`, `optimizer_runs = 200`
+   - Add `[rpc_endpoints]` for `avax_fuji` and `avax_mainnet`
+   - Add `[etherscan]` with Routescan verifier URLs
+6. Create `.env.example` with placeholder keys: `PRIVATE_KEY`, `SNOWTRACE_API_KEY`, `AVAX_FUJI_RPC`, `AVAX_MAINNET_RPC`
+7. Add `.env` to `.gitignore` — confirm it is not tracked
+8. Create `script/Deploy.s.sol` scaffold (empty, just the import and contract shell)
+9. Run `forge build` — confirm zero errors
+10. Run `forge test` — confirm zero tests, zero failures (empty suite passes)
+11. Commit the initialized project structure
+
+**Gate:** `forge build` and `forge test` both pass on a clean clone. `.env` is gitignored. OpenZeppelin imports resolve.
+
+---
+
 ## Phase 1 — MockUSDC
 
 Every contract in the system touches USDC. Write this first so all subsequent testing
@@ -594,7 +622,34 @@ No contract changes. Only the workflow's HTTP target and secret change.
 
 ---
 
-## Phase 13 — Frontend
+## Phase 13 — Frontend Initialization
+
+Set up the frontend project before building any UI. All of Phase 14 depends on this foundation.
+
+1. Create a `frontend/` directory at the project root
+2. Initialize a Next.js project inside it: `npx create-next-app@latest . --typescript --tailwind --eslint --app`
+3. Install Reown AppKit and wagmi stack:
+   ```bash
+   npm install @reown/appkit @reown/appkit-adapter-wagmi wagmi viem @tanstack/react-query
+   ```
+4. Get a Project ID from https://dashboard.reown.com (free, required)
+5. Create `frontend/config/index.tsx` — wagmiAdapter with `avalancheFuji` and `avalanche` networks (read `skills/reown.md` Layer 1)
+6. Create `frontend/context/index.tsx` — `createAppKit` with Sentinel Protocol metadata and `ContextProvider` component
+7. Update `frontend/app/layout.tsx` — wrap with `ContextProvider`, pass cookies for SSR
+8. Apply the required `next.config.js` webpack fix (`pino-pretty`, `lokijs`, `encoding` externals)
+9. Create `frontend/.env.local` from the template in `skills/reown.md` Layer 5 — add Project ID and placeholder contract addresses
+10. Add `frontend/.env.local` to `.gitignore`
+11. Create `frontend/contracts/index.ts` — export placeholder ABIs and addresses for all 6 contracts (GovernanceModule, RiskVault, FlightPool, Controller, OracleAggregator, RecoveryPool)
+12. Build a minimal `/` page with `<AppKitButton />` and display `address` from `useAppKitAccount()`
+13. Run `npm run dev` — confirm app starts with no errors
+14. Connect a wallet in browser — confirm address appears, network shows Avalanche Fuji
+15. Test network switching — confirm `switchNetwork(avalancheFuji)` prompt works
+
+**Gate:** App runs locally. Wallet connects via AppKit modal. Address and network display correctly. No console errors on connect.
+
+---
+
+## Phase 14 — Frontend
 
 Build and validate the frontend against testnet contracts before mainnet.
 
@@ -711,7 +766,7 @@ Build and validate the frontend against testnet contracts before mainnet.
 
 ---
 
-## Phase 14 — Mainnet
+## Phase 15 — Mainnet
 
 1. Confirm all access control modifiers active — none commented out for testing
 2. Confirm AeroAPI production tier subscription active and within rate limits for expected volume
@@ -740,6 +795,7 @@ Build and validate the frontend against testnet contracts before mainnet.
 
 | Phase | Deliverable | Gate |
 |---|---|---|
+| 0 | Foundry project init | `forge build` + `forge test` pass, OpenZeppelin resolves, `.env` gitignored |
 | 1 | MockUSDC | Mint + transfer + approve working |
 | 2 | RecoveryPool | Deposit + withdraw + access control |
 | 3 | GovernanceModule | Route lifecycle + admin management |
@@ -752,5 +808,6 @@ Build and validate the frontend against testnet contracts before mainnet.
 | 10 | CRE workflow (mock API) | Simulation works all outcomes; `setCreWorkflow` wired |
 | 11 | Workflow → AeroAPI | Real API responses parse correctly for all outcomes |
 | 12 | Testnet deployment | Live end-to-end cycle complete, CRE workflow active and writing on-chain |
-| 13 | Frontend | All flows verified on testnet through UI |
-| 14 | Mainnet | Production, Early Access disclosure made |
+| 13 | Frontend init | Next.js + Reown AppKit running, wallet connects, network switches |
+| 14 | Frontend | All flows verified on testnet through UI |
+| 15 | Mainnet | Production, Early Access disclosure made |

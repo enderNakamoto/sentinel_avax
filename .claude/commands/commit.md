@@ -99,9 +99,18 @@ EOF
 
 Run `git status` and `git log -1 --oneline` after the commit and show the user the result.
 
+### 10. Push
+
+After a successful commit, run `git push` to push the branch to the remote.
+
+If the branch has no upstream yet, run `git push -u origin <branch-name>` instead.
+
+Show the push output to the user.
+
 ## Notes
 
 - Never use `--no-verify`
 - Never amend a published commit
 - Never auto-commit — always wait for explicit approval
 - If `git commit` fails due to a pre-commit hook, report the hook output and ask the user how to proceed
+- If `git push` fails, report the error and ask the user how to proceed — do not force push

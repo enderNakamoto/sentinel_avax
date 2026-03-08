@@ -1,8 +1,8 @@
 # Phase 1 — MockUSDC
 
-Status: in_progress
+Status: complete
 Started: 2026-03-08
-Completed: —
+Completed: 2026-03-08
 
 ---
 
@@ -51,6 +51,9 @@ Wrote 8 tests covering all subtasks: transfer, transferFrom, approve/allowance, 
 
 All subtasks complete. Gate condition met. Ready for /complete-phase.
 
+### Session 2026-03-08 — Completed
+Phase validated by user. All gate conditions met.
+
 ---
 
 ## Files Created / Modified
@@ -71,4 +74,18 @@ All subtasks complete. Gate condition met. Ready for /complete-phase.
 
 ## Completion Summary
 
-> Populated by /complete-phase. Do not edit manually.
+**What was built:**
+- `contracts/src/MockUSDC.sol` — mintable ERC-20, 6 decimals, OZ v5 `ERC20` + `Ownable`, owner-only `mint()`
+- `contracts/test/MockUSDC.t.sol` — 8 tests covering all ERC-20 operations at 6-decimal precision
+
+**Key decisions locked in:**
+- `MockUSDC` lives in `src/` not `test/` — importable by deploy scripts and integration tests in future phases
+- OZ v5 `Ownable(msg.sender)` constructor pattern — no post-deploy `transferOwnership` call needed
+- No `burn` — not required by any downstream contract
+
+**Gate result:** `forge test` — 8/8 passed, 0 failed
+
+**Next phase should know:**
+- Import `MockUSDC` from `src/MockUSDC.sol` in all future tests
+- Owner of `MockUSDC` in tests is `address(this)` (the test contract) — mint calls come from `this`, not a named actor
+- 1 USDC = 1_000_000 (6 decimals) — use this consistently in all test amounts

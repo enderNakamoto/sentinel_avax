@@ -1,8 +1,8 @@
 # Phase 12 — Frontend
 
-Status: in_progress
+Status: complete
 Started: 2026-03-09
-Completed: —
+Completed: 2026-03-09
 
 ---
 
@@ -85,10 +85,10 @@ Build the MVP frontend for Sentinel Protocol against the Fuji testnet contracts.
 - [x] 38. Transaction reverted — catch and display a user-friendly error message (extract revert reason where possible)
 
 **Final validation on testnet:**
-- [ ] 39. Complete full underwriter deposit → withdraw → collect cycle through the UI
-- [ ] 40. Complete full traveler buy insurance → wait for settlement → claim cycle through the UI
-- [ ] 41. Confirm dashboard stats update after each action (TVL, share price, active flight count)
-- [ ] 42. Confirm oracle status updates appear in active flights table within two CRE workflow ticks
+- [x] 39. Complete full underwriter deposit → withdraw → collect cycle through the UI
+- [x] 40. Complete full traveler buy insurance → wait for settlement → claim cycle through the UI
+- [x] 41. Confirm dashboard stats update after each action (TVL, share price, active flight count)
+- [x] 42. Confirm oracle status updates appear in active flights table within two CRE workflow ticks
 
 ### Gate
 
@@ -131,6 +131,9 @@ Subtasks 39–42 are testnet validation tasks — require user to run the UI aga
 
 All implementation subtasks (1–38) complete. Gate condition (both user cycles, dashboard stats, oracle status) can only be verified by the user running against Fuji. Ready for /complete-phase once testnet validation passes.
 
+### Session 2026-03-09 — Completed
+Phase validated by user. All gate conditions met. Both user cycles (traveler and underwriter) confirmed end-to-end on Fuji testnet. Dashboard stats and oracle status updates verified.
+
 > Populated by the agent during work. Do not edit manually.
 
 ---
@@ -165,4 +168,44 @@ All implementation subtasks (1–38) complete. Gate condition (both user cycles,
 
 ## Completion Summary
 
-> Populated by /complete-phase. Do not edit manually.
+**What was built:**
+- Full MVP frontend for Sentinel Protocol on Next.js with wagmi v2 + Reown AppKit
+- 4 pages: `/` (landing + live stats), `/routes` (buy insurance), `/policies` (traveler claims), `/vault` (underwriter)
+- Landing page: hero with shimmer CTA, count-up stat cards (policies sold, premiums, payouts, TVL), "How it works" steps, role cards, SVG flight animation background
+- Dashboard: live on-chain stats from Controller and RiskVault, active flights table with oracle status
+- Routes page: RouteCard per route with date picker, pool lookup, solvency guard, hasBought check, two-step approve → buy flow, localStorage policy tracking
+- Policies page: scans localStorage + getActivePools() for hasBought, PolicyCard with claim flow, expiry countdown
+- Vault page: deposit tab (approve → deposit, estimated shares), withdraw tab (previewRedeem/Free, queue warning), collect section
+
+**Key decisions locked in:**
+- `localStorage` is the primary source for policy addresses; `getActivePools()` is a fallback scan for cross-device purchases
+- Sequential two-step UX (separate Approve button then action button) — avoids `waitForTransactionReceipt` in components
+- `useVaultStats` split into two `useReadContracts` calls to avoid TypeScript union discrimination failures
+- `tsconfig.json` target bumped to ES2020 for BigInt literal support
+- APY hardcoded at 37% labeled "Projected APY"
+- Deployed on Vercel; `generated.ts` committed and unignored for Vercel build
+
+**Files created:**
+- `frontend/src/lib/format.ts`
+- `frontend/src/lib/policyStore.ts`
+- `frontend/src/hooks/useUsdcBalance.ts`
+- `frontend/src/hooks/useUsdcApprove.ts`
+- `frontend/src/components/Nav.tsx`
+- `frontend/src/components/FlightBackground.tsx`
+- `frontend/src/components/ConnectPrompt.tsx`
+- `frontend/src/app/page.tsx` (replaced)
+- `frontend/src/app/routes/page.tsx`
+- `frontend/src/app/policies/page.tsx`
+- `frontend/src/app/vault/page.tsx`
+
+**Files modified:**
+- `frontend/src/app/layout.tsx` — added Nav + main wrapper
+- `frontend/tsconfig.json` — target ES2017 → ES2020
+- `frontend/src/generated.ts` — committed and unignored for Vercel
+- `frontend/.gitignore` — removed generated.ts exclusion
+
+**Next phase should know:**
+- All 6 contracts deployed and verified on Fuji; addresses in `frontend/src/contracts/addresses.ts`
+- `generated.ts` is committed and must stay committed for Vercel builds
+- Frontend live at Vercel (URL in README)
+- Phase 13 (Mainnet) is next — requires mainnet USDC address, new deployment, and updating `addresses.ts`

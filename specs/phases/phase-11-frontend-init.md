@@ -1,8 +1,8 @@
 # Phase 11 — Frontend Initialization
 
-Status: in_progress
+Status: complete
 Started: 2026-03-09
-Completed: —
+Completed: 2026-03-09
 
 ---
 
@@ -69,7 +69,7 @@ Scaffold the Next.js frontend for Sentinel Protocol — wallet connection via Re
 - [x] 9. Add `src/generated.ts` to `.gitignore` (regenerated from build artifacts)
 
 **Reown AppKit config:**
-- [ ] 10. Get a Reown Project ID from https://dashboard.reown.com
+- [x] 10. Get a Reown Project ID from https://dashboard.reown.com
 - [x] 11. Create `frontend/.env.local` with:
   ```
   NEXT_PUBLIC_REOWN_PROJECT_ID=<your-project-id>
@@ -100,10 +100,10 @@ Scaffold the Next.js frontend for Sentinel Protocol — wallet connection via Re
 
 **Verify:**
 - [x] 21. Run `npm run dev` — confirm app starts with zero errors
-- [ ] 22. Open in browser — confirm page loads, AppKit button renders
-- [ ] 23. Connect a wallet — confirm address appears, network shows "Avalanche Fuji"
-- [ ] 24. If connected to wrong network — confirm AppKit prompts to switch
-- [ ] 25. Verify `src/generated.ts` exports are importable — add a temporary `console.log` of a contract ABI in `page.tsx`, confirm no TypeScript errors, then remove
+- [x] 22. Open in browser — confirm page loads, AppKit button renders
+- [x] 23. Connect a wallet — confirm address appears, network shows "Avalanche Fuji"
+- [x] 24. If connected to wrong network — confirm AppKit prompts to switch
+- [x] 25. Verify `src/generated.ts` exports are importable — add a temporary `console.log` of a contract ABI in `page.tsx`, confirm no TypeScript errors, then remove
 
 ### Gate
 
@@ -115,6 +115,9 @@ App runs locally with `npm run dev`. Wallet connects via AppKit modal. Address a
 
 ### Session 2026-03-09
 Starting phase. Pre-work notes reviewed. Stack: Next.js 14+ App Router, wagmi v2, Reown AppKit, shadcn/ui, wagmi CLI Foundry plugin. No Hedera patterns.
+
+### Session 2026-03-09 — Completed
+Phase validated by user. All gate conditions met. Switched from Reown AppKit to RainbowKit mid-phase due to Solana transitive dep issues in AppKit; RainbowKit is cleaner, MIT licensed, and fully compatible with wagmi v2.
 
 **Subtasks 1–21 complete.** Dev server starts clean (`✓ Ready in 423ms`), zero TypeScript errors.
 
@@ -163,4 +166,32 @@ Key decisions:
 
 ## Completion Summary
 
-> Populated by /complete-phase. Do not edit manually.
+**What was built:**
+Next.js 16.1.6 App Router frontend scaffolded with full wallet connection stack. RainbowKit v2 (swapped from Reown AppKit) provides the connect modal. wagmi v2 + viem handles chain interactions. shadcn/ui (Tailwind v4) provides the component library. wagmi CLI Foundry plugin auto-generates typed ABIs from `contracts/out/` into `src/generated.ts`.
+
+**Key decisions locked in:**
+- **RainbowKit over Reown AppKit** — AppKit pulled in `@coinbase/cdp-sdk` which has Solana deps unavailable in Turbopack; RainbowKit is clean, MIT, and wagmi-native
+- **wagmi v2** — pinned because RainbowKit v2 requires it (wagmi v3 not yet supported by RainbowKit)
+- **`@wagmi/cli` foundry plugin is bundled** — import from `@wagmi/cli/plugins`, no separate package
+- **`turbopack: {}`** — Next.js 16 defaults to Turbopack; empty config silences the webpack-only warning
+- **`src/generated.ts` gitignored** — regenerated via `npx wagmi generate` from `contracts/out/`
+- **WalletConnect projectId reused** — Reown dashboard project ID works for RainbowKit (same WalletConnect infrastructure)
+
+**Files created/modified (final):**
+- `frontend/` — full Next.js app (38 files)
+- `frontend/wagmi.config.ts` — wagmi CLI config, Foundry plugin
+- `frontend/next.config.ts` — `turbopack: {}` only
+- `frontend/src/config/wagmi.ts` — `getDefaultConfig()` with avalancheFuji + avalanche
+- `frontend/src/context/index.tsx` — RainbowKitProvider + WagmiProvider + QueryClientProvider
+- `frontend/src/app/layout.tsx` — root layout with ContextProvider
+- `frontend/src/app/page.tsx` — landing page, ConnectButton, useAccount()
+- `frontend/src/components/ConnectPrompt.tsx` — unauthenticated fallback
+- `frontend/src/contracts/addresses.ts` — Fuji address map (chainId 43113)
+- `frontend/src/contracts/index.ts` — ABI + address re-exports
+- `frontend/.env.local` — all 6 contract addresses + WalletConnect project ID (gitignored)
+
+**Phase 12 should know:**
+- Run `npx wagmi generate` from `frontend/` after any contract ABI changes
+- `fujiAddresses` from `src/contracts/addresses.ts` has all 6 deployed contract addresses
+- ABIs are imported as `controllerAbi`, `riskVaultAbi`, etc. from `src/contracts/index.ts`
+- wagmi v2 API: `useReadContract`, `useWriteContract`, `useWaitForTransactionReceipt`

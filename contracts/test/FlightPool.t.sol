@@ -214,15 +214,14 @@ contract FlightPoolTest is Test {
         assertEq(usdc.balanceOf(address(vault)), 2 * PREMIUM);
     }
 
-    // 20. recordPremiumIncome called with correct amount
-    function test_SettleNotDelayed_CallsRecordPremiumIncome() public {
+    // 20. settleNotDelayed transfers all premiums to vault
+    function test_SettleNotDelayed_TransfersPremiumToVault() public {
         usdc.mint(address(pool), 3 * PREMIUM);
 
         vm.prank(controller);
         pool.settleNotDelayed();
 
-        assertEq(vault.premiumIncomeRecorded(), 3 * PREMIUM);
-        assertEq(vault.premiumIncomeCallCount(), 1);
+        assertEq(usdc.balanceOf(address(vault)), 3 * PREMIUM);
     }
 
     // 21. pool isSettled=true, outcome=NotDelayed
@@ -251,8 +250,7 @@ contract FlightPoolTest is Test {
         pool.settleNotDelayed();
 
         assertTrue(pool.isSettled());
-        assertEq(vault.premiumIncomeRecorded(), 0);
-        assertEq(vault.premiumIncomeCallCount(), 1);
+        assertEq(usdc.balanceOf(address(vault)), 0); // zero-balance pool transfers nothing
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -309,7 +307,6 @@ contract FlightPoolTest is Test {
         // buyer1 got PAYOFF, remainder = PREMIUM + extra still in pool after payout
         // remainder = PREMIUM (from buy) + extra
         uint256 expectedRemainder = PREMIUM + extra;
-        assertEq(vault.premiumIncomeRecorded(), expectedRemainder);
         assertEq(usdc.balanceOf(address(vault)), expectedRemainder);
     }
 
@@ -686,6 +683,6 @@ contract FlightPoolTest is Test {
         assertEq(usdc.balanceOf(buyer2), PAYOFF);
         assertEq(usdc.balanceOf(buyer3), PAYOFF);
         // premiums (3*PREMIUM) are remainder → vault
-        assertEq(vault.premiumIncomeRecorded(), 3 * PREMIUM);
+        assertEq(usdc.balanceOf(address(vault)), 3 * PREMIUM);
     }
 }

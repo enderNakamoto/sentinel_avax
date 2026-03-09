@@ -3,10 +3,6 @@ pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface IRiskVault {
-    function recordPremiumIncome(uint256 amount) external;
-}
-
 interface IRecoveryPool {
     function _recordDeposit(address sourcePool, uint256 amount) external;
 }
@@ -140,7 +136,6 @@ contract FlightPool {
         if (balance > 0) {
             usdc.transfer(riskVault, balance);
         }
-        IRiskVault(riskVault).recordPremiumIncome(balance);
 
         emit SettledNotDelayed(balance);
     }
@@ -258,6 +253,5 @@ contract FlightPool {
         if (remainder > 0) {
             usdc.transfer(riskVault, remainder);
         }
-        IRiskVault(riskVault).recordPremiumIncome(remainder);
     }
 }

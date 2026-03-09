@@ -7,6 +7,11 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/*/dry-run/
 
+# CRE workflow
+cre/.env
+cre/node_modules/
+cre/dist/
+
 # Frontend
 frontend/.env
 frontend/.env.local

@@ -52,6 +52,87 @@ Chainlink CRE workflow design and deployment: [specs/integrations/chainlink_inte
 
 ---
 
+## Deployment
+
+All forge commands run from inside `contracts/`. Network config and Routescan verifier are already in `foundry.toml`.
+
+### Prerequisites
+
+```bash
+cp contracts/.env.example contracts/.env
+# Fill in PRIVATE_KEY, SNOWTRACE_API_KEY
+# AVAX_FUJI_RPC defaults to https://api.avax-test.network/ext/bc/C/rpc
+```
+
+### Step 1 — Build & test
+
+```bash
+cd contracts
+forge build
+forge test
+```
+
+### Step 2 — Deploy all contracts (Fuji)
+
+```bash
+forge script script/Deploy.s.sol:DeployScript \
+  --rpc-url avax_fuji \
+  --chain-id 43113 \
+  --broadcast \
+  --verify \
+  --verifier etherscan \
+  --verifier-url https://api.routescan.io/v2/network/testnet/evm/43113/etherscan \
+  --etherscan-api-key $SNOWTRACE_API_KEY \
+  -vvvv
+```
+
+> Add `--slow` if you see nonce errors. The script deploys and wires in a single broadcast — no manual steps needed for the Solidity side.
+
+The script deploys in this order and wires automatically:
+
+| # | Action | Notes |
+|---|---|---|
+| 1 | Deploy `MockUSDC` | testnet stand-in for real USDC |
+| 2 | Deploy `GovernanceModule` | owner = deployer |
+| 3 | Deploy `RecoveryPool` | depends on USDC |
+| 4 | Deploy `OracleAggregator` | no deps at deploy time |
+| 5 | Deploy `RiskVault` | `controller = address(0)` placeholder |
+| 6 | Deploy `Controller` | depends on all above |
+| 7 | `OracleAggregator.setController(controller)` | one-time, locks forever |
+| 8 | `RiskVault.setController(controller)` | one-time, locks forever |
+
+Copy the logged addresses into your `.env` as `ORACLE_AGGREGATOR_ADDRESS` and `CONTROLLER_ADDRESS`.
+
+### Step 3 — Approve routes (cast)
+
+```bash
+cast send $GOVERNANCE_ADDRESS \
+  "approveRoute(string,string,string,uint256,uint256)" \
+  "AA123" "DEN" "SEA" 12000000 150000000 \
+  --rpc-url avax_fuji --private-key $PRIVATE_KEY
+```
+
+Amounts are in USDC units (6 decimals): `12000000` = $12 premium, `150000000` = $150 payoff.
+
+### Step 4 — Wire CRE workflow (after Phase 11)
+
+Once the CRE workflow is deployed and its forwarder address is known:
+
+```bash
+# Add to .env:
+# CRE_WORKFLOW_ADDRESS=<forwarder from `cre workflow info <id>`>
+
+forge script script/WireCRE.s.sol:WireCREScript \
+  --rpc-url avax_fuji \
+  --chain-id 43113 \
+  --broadcast \
+  -vvvv
+```
+
+This calls `OracleAggregator.setOracle(cre)` (one-time, locks forever) and `Controller.setCreWorkflow(cre)` (owner-updatable). After this the system is fully operational.
+
+---
+
 ## File Structure
 
 ```
@@ -61,7 +142,8 @@ sentinel_protocol_avax/
 │   ├── src/                      # Contract source files (phases 1–7)
 │   ├── test/                     # Forge tests (phases 1–8)
 │   ├── script/
-│   │   └── Deploy.s.sol          # Deployment script (phase 12)
+│   │   ├── Deploy.s.sol          # Deploy all 6 contracts + Solidity wiring
+│   │   └── WireCRE.s.sol         # Post-CRE wiring (setOracle + setCreWorkflow)
 │   ├── lib/
 │   │   ├── forge-std/
 │   │   └── openzeppelin-contracts/

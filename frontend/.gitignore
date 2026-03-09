@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# wagmi CLI — regenerated from contracts/out/
-src/generated.ts
+# wagmi CLI output committed so Vercel can build without running wagmi generate
+# src/generated.ts

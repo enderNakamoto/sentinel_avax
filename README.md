@@ -29,12 +29,12 @@ All six contracts are deployed and verified on Avalanche Fuji (43113) as of 2026
 
 | Contract | Address | Explorer |
 |---|---|---|
-| MockUSDC | `0x18975871ab7E57e0f26fdF429592238541051Fb0` | [view ↗](https://testnet.snowscan.xyz/address/0x18975871ab7e57e0f26fdf429592238541051fb0) |
-| GovernanceModule | `0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D` | [view ↗](https://testnet.snowscan.xyz/address/0x30ccf5c0ea4f871398136dd643a0544aba39b26d) |
-| RecoveryPool | `0x981BeeCd15b05A35206cfc44af12373B45613E71` | [view ↗](https://testnet.snowscan.xyz/address/0x981beecd15b05a35206cfc44af12373b45613e71) |
-| OracleAggregator | `0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3` | [view ↗](https://testnet.snowscan.xyz/address/0x14cf0cd23b5a444f1e57765d12f21ee7f1e8a2c3) |
-| RiskVault | `0x3E65cABB59773a7D21132dAAa587E7Fc777d427C` | [view ↗](https://testnet.snowscan.xyz/address/0x3e65cabb59773a7d21132daaa587e7fc777d427c) |
-| Controller | `0xd67c1b05Cdfa20aa23C295a2c24310763fED4888` | [view ↗](https://testnet.snowscan.xyz/address/0xd67c1b05cdfa20aa23c295a2c24310763fed4888) |
+| MockUSDC | `0x18975871ab7E57e0f26fdF429592238541051Fb0` | [view ↗](https://testnet.snowtrace.io/address/0x18975871ab7e57e0f26fdf429592238541051fb0#code) |
+| GovernanceModule | `0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D` | [view ↗](https://testnet.snowtrace.io/address/0x30ccf5c0ea4f871398136dd643a0544aba39b26d#code) |
+| RecoveryPool | `0x981BeeCd15b05A35206cfc44af12373B45613E71` | [view ↗](https://testnet.snowtrace.io/address/0x981beecd15b05a35206cfc44af12373b45613e71#code) |
+| OracleAggregator | `0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3` | [view ↗](https://testnet.snowtrace.io/address/0x14cf0cd23b5a444f1e57765d12f21ee7f1e8a2c3#code) |
+| RiskVault | `0x3E65cABB59773a7D21132dAAa587E7Fc777d427C` | [view ↗](https://testnet.snowtrace.io/address/0x3e65cabb59773a7d21132daaa587e7fc777d427c#code) |
+| Controller | `0xd67c1b05Cdfa20aa23C295a2c24310763fED4888` | [view ↗](https://testnet.snowtrace.io/address/0xd67c1b05cdfa20aa23c295a2c24310763fed4888#code) |
 
 Deployment details and verification commands: [deploy.md](deploy.md).
 

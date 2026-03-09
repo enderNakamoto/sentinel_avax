@@ -8,7 +8,6 @@ import { formatUsdc, getErrMsg } from '@/lib/format'
 import { loadPolicies, StoredPolicy } from '@/lib/policyStore'
 import { ConnectPrompt } from '@/components/ConnectPrompt'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 // FlightPool.Outcome: 0=Pending 1=NotDelayed 2=Delayed 3=Cancelled
@@ -18,11 +17,19 @@ const OUTCOME_LABELS: Record<number, string> = {
   2: 'Delayed — claim available',
   3: 'Cancelled — claim available',
 }
-const OUTCOME_VARIANT: Record<number, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  0: 'outline',
-  1: 'secondary',
-  2: 'destructive',
-  3: 'destructive',
+
+const OUTCOME_COLORS: Record<number, string> = {
+  0: '#5a6478',
+  1: '#2ecc8f',
+  2: '#f5c842',
+  3: '#e05c6b',
+}
+
+const OUTCOME_BG: Record<number, string> = {
+  0: 'rgba(90,100,120,0.1)',
+  1: 'rgba(46,204,143,0.1)',
+  2: 'rgba(245,200,66,0.1)',
+  3: 'rgba(224,92,107,0.1)',
 }
 
 // ── Policy card ──────────────────────────────────────────────────────────────
@@ -38,7 +45,6 @@ function PolicyCard({
 }) {
   const addr = poolAddress as Address
 
-  // Read all relevant pool data in one shot
   const { data, refetch } = useReadContracts({
     contracts: [
       { address: addr, abi: flightPoolAbi, functionName: 'flightId' as const },
@@ -76,7 +82,6 @@ function PolicyCard({
     }
   }, [isSuccess, refetch, onClaimed])
 
-  // Expiry countdown
   const expiryDate = claimExpiry ? new Date(Number(claimExpiry) * 1000) : null
   const isExpired = expiryDate ? Date.now() > expiryDate.getTime() : false
 
@@ -101,29 +106,37 @@ function PolicyCard({
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base">{flightId ?? '…'}</CardTitle>
-            <p className="text-sm text-muted-foreground">{flightDate ?? '…'}</p>
+            <CardTitle className="text-base" style={{ color: '#e8ecf4' }}>{flightId ?? '…'}</CardTitle>
+            <p className="text-sm" style={{ color: '#5a6478' }}>{flightDate ?? '…'}</p>
           </div>
-          <Badge variant={OUTCOME_VARIANT[outcome]}>{OUTCOME_LABELS[outcome] ?? 'Unknown'}</Badge>
+          <span
+            className="rounded-full px-2.5 py-0.5 text-xs font-semibold shrink-0"
+            style={{
+              color: OUTCOME_COLORS[outcome],
+              background: OUTCOME_BG[outcome],
+            }}
+          >
+            {OUTCOME_LABELS[outcome] ?? 'Unknown'}
+          </span>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+        <div className="rounded-lg p-3 text-sm space-y-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1e2530' }}>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Payout</span>
-            <span className="font-semibold">${formatUsdc(payoff)} USDC</span>
+            <span style={{ color: '#5a6478' }}>Payout</span>
+            <span className="font-semibold" style={{ color: '#2ecc8f' }}>${formatUsdc(payoff)} USDC</span>
           </div>
           {expiryDate && (outcome === 2 || outcome === 3) && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Claim deadline</span>
-              <span className={isExpired ? 'text-destructive' : ''}>
+              <span style={{ color: '#5a6478' }}>Claim deadline</span>
+              <span style={{ color: isExpired ? '#e05c6b' : '#e8ecf4' }}>
                 {expiryDate.toLocaleDateString()}
               </span>
             </div>
           )}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Pool</span>
-            <span className="font-mono text-xs">
+            <span style={{ color: '#5a6478' }}>Pool</span>
+            <span className="font-mono text-xs" style={{ color: '#5a6478' }}>
               {poolAddress.slice(0, 8)}…{poolAddress.slice(-4)}
             </span>
           </div>
@@ -131,11 +144,16 @@ function PolicyCard({
 
         {/* Claim UI */}
         {claimSuccess ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            <p className="font-medium">Claimed! ${formatUsdc(payoff)} USDC sent to your wallet.</p>
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.08)' }}
+          >
+            <p className="font-medium" style={{ color: '#2ecc8f' }}>
+              Claimed! ${formatUsdc(payoff)} USDC sent to your wallet.
+            </p>
           </div>
         ) : claimed ? (
-          <p className="text-sm text-muted-foreground">Already claimed.</p>
+          <p className="text-sm" style={{ color: '#5a6478' }}>Already claimed.</p>
         ) : canClaim ? (
           <Button
             onClick={handleClaim}
@@ -145,15 +163,18 @@ function PolicyCard({
             {isPending ? 'Confirm in wallet…' : isConfirming ? 'Processing…' : `Claim $${formatUsdc(payoff)} USDC`}
           </Button>
         ) : isExpired && (outcome === 2 || outcome === 3) ? (
-          <p className="text-sm text-destructive">Claim window closed.</p>
+          <p className="text-sm" style={{ color: '#e05c6b' }}>Claim window closed.</p>
         ) : outcome === 0 ? (
-          <p className="text-sm text-muted-foreground">Awaiting flight settlement…</p>
+          <p className="text-sm" style={{ color: '#5a6478' }}>Awaiting flight settlement…</p>
         ) : outcome === 1 ? (
-          <p className="text-sm text-muted-foreground">Flight landed on time — no payout due.</p>
+          <p className="text-sm" style={{ color: '#5a6478' }}>Flight landed on time — no payout due.</p>
         ) : null}
 
         {claimError && (
-          <p className="text-sm text-destructive rounded border border-destructive/20 bg-destructive/5 p-2">
+          <p
+            className="text-sm rounded p-2"
+            style={{ color: '#e05c6b', border: '1px solid rgba(224,92,107,0.2)', background: 'rgba(224,92,107,0.08)' }}
+          >
             {claimError}
           </p>
         )}
@@ -168,14 +189,12 @@ export default function PoliciesPage() {
   const { address } = useAccount()
   const [claimedCount, setClaimedCount] = useState(0)
 
-  // Stored policies from localStorage (purchased through this browser)
   const storedPolicies: StoredPolicy[] = useMemo(
     () => (address ? loadPolicies(address) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [address, claimedCount],
   )
 
-  // Also scan getActivePools() — may find pools the user bought on another device
   const { data: activePools } = useReadContract({
     address: fujiAddresses.controller,
     abi: controllerAbi,
@@ -183,7 +202,6 @@ export default function PoliciesPage() {
     query: { enabled: !!address },
   })
 
-  // Read hasBought for each active pool
   const activePoolAddresses = (activePools ?? []) as Address[]
   const { data: hasBoughtData } = useReadContracts({
     contracts: activePoolAddresses.map((poolAddr) => ({
@@ -195,7 +213,6 @@ export default function PoliciesPage() {
     query: { enabled: activePoolAddresses.length > 0 && !!address },
   })
 
-  // All pool addresses to show: stored + active pools where hasBought is true
   const allPoolAddresses = useMemo(() => {
     const stored = storedPolicies.map((p) => p.poolAddress.toLowerCase())
     const activeWithBought = activePoolAddresses.filter(
@@ -207,8 +224,8 @@ export default function PoliciesPage() {
 
   if (!address) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">My Policies</h1>
+      <div className="space-y-6" style={{ animation: 'fade-in-up 0.4s ease both' }}>
+        <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>My Policies</h1>
         <div className="max-w-sm">
           <ConnectPrompt />
         </div>
@@ -217,20 +234,20 @@ export default function PoliciesPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{ animation: 'fade-in-up 0.4s ease both' }}>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">My Policies</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>My Policies</h1>
+        <p className="mt-1" style={{ color: '#5a6478' }}>
           Your purchased flight insurance policies.
         </p>
       </div>
 
       {allPoolAddresses.length === 0 ? (
-        <div className="rounded-xl border bg-muted/30 p-8 text-center">
-          <p className="text-muted-foreground">No policies found.</p>
-          <p className="text-sm text-muted-foreground mt-1">
+        <div className="rounded-xl p-8 text-center" style={{ border: '1px solid #1e2530', background: '#0f1218' }}>
+          <p style={{ color: '#5a6478' }}>No policies found.</p>
+          <p className="text-sm mt-1" style={{ color: '#5a6478' }}>
             Buy insurance on the{' '}
-            <a href="/routes" className="underline underline-offset-2">
+            <a href="/routes" style={{ color: '#3b8ef3' }} className="underline underline-offset-2">
               Buy Insurance
             </a>{' '}
             page.

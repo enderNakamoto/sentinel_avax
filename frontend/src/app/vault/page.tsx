@@ -11,7 +11,7 @@ import { ConnectPrompt } from '@/components/ConnectPrompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // ── Shared vault read hook ───────────────────────────────────────────────────
@@ -70,7 +70,6 @@ function DepositTab({ address }: { address: Address }) {
   const parsedAmount = parseUsdc(amount)
   const insufficientBalance = usdcBalance !== undefined && parsedAmount > usdcBalance
 
-  // Estimated shares: amount * totalShares / totalManagedAssets (or 1:1 if empty)
   const estimatedShares =
     parsedAmount > 0n
       ? totalManagedAssets && totalShares && totalManagedAssets > 0n
@@ -118,12 +117,12 @@ function DepositTab({ address }: { address: Address }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Your USDC balance</span>
-        <span className="font-medium">${formatUsdc(usdcBalance)}</span>
+        <span style={{ color: '#5a6478' }}>Your USDC balance</span>
+        <span className="font-medium" style={{ color: '#3b8ef3' }}>${formatUsdc(usdcBalance)}</span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Your shares</span>
-        <span className="font-medium">{formatUsdc(myShares)}</span>
+        <span style={{ color: '#5a6478' }}>Your shares</span>
+        <span className="font-medium" style={{ color: '#e8ecf4' }}>{formatUsdc(myShares)}</span>
       </div>
 
       <div className="space-y-1.5">
@@ -148,26 +147,29 @@ function DepositTab({ address }: { address: Address }) {
           )}
         </div>
         {insufficientBalance && (
-          <p className="text-xs text-destructive">Insufficient USDC balance.</p>
+          <p className="text-xs" style={{ color: '#e05c6b' }}>Insufficient USDC balance.</p>
         )}
       </div>
 
       {parsedAmount > 0n && (
-        <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+        <div className="rounded-lg p-3 text-sm space-y-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1e2530' }}>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">You deposit</span>
-            <span>${formatUsdc(parsedAmount)} USDC</span>
+            <span style={{ color: '#5a6478' }}>You deposit</span>
+            <span style={{ color: '#e8ecf4' }}>${formatUsdc(parsedAmount)} USDC</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Estimated shares</span>
-            <span>{formatUsdc(estimatedShares)}</span>
+            <span style={{ color: '#5a6478' }}>Estimated shares</span>
+            <span style={{ color: '#3b8ef3' }}>{formatUsdc(estimatedShares)}</span>
           </div>
         </div>
       )}
 
       {success ? (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          Deposit successful! Shares credited to your account.
+        <div
+          className="rounded-lg p-3 text-sm"
+          style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.08)' }}
+        >
+          <p style={{ color: '#2ecc8f' }}>Deposit successful! Shares credited to your account.</p>
         </div>
       ) : needsApproval(parsedAmount) && parsedAmount > 0n ? (
         <Button
@@ -189,7 +191,10 @@ function DepositTab({ address }: { address: Address }) {
       )}
 
       {error && (
-        <p className="text-sm text-destructive rounded border border-destructive/20 bg-destructive/5 p-2">
+        <p
+          className="text-sm rounded p-2"
+          style={{ color: '#e05c6b', border: '1px solid rgba(224,92,107,0.2)', background: 'rgba(224,92,107,0.08)' }}
+        >
           {error}
         </p>
       )}
@@ -215,7 +220,6 @@ function WithdrawTab({ address }: { address: Address }) {
       : undefined
   const exceedsAvailable = availableShares !== undefined && parsedShares > availableShares
 
-  // Preview redeems for entered share amount
   const { data: previewData } = useReadContracts({
     contracts: [
       { address: fujiAddresses.riskVault, abi: riskVaultAbi, functionName: 'previewRedeem' as const, args: [parsedShares] as const },
@@ -262,17 +266,20 @@ function WithdrawTab({ address }: { address: Address }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Your shares</span>
-        <span className="font-medium">{formatUsdc(myShares)}</span>
+        <span style={{ color: '#5a6478' }}>Your shares</span>
+        <span className="font-medium" style={{ color: '#e8ecf4' }}>{formatUsdc(myShares)}</span>
       </div>
       {myQueuedShares !== undefined && myQueuedShares > 0n && (
         <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Queued shares</span>
-          <span className="text-amber-600">{formatUsdc(myQueuedShares)} (pending withdrawal)</span>
+          <span style={{ color: '#5a6478' }}>Queued shares</span>
+          <span style={{ color: '#f5c842' }}>{formatUsdc(myQueuedShares)} (pending withdrawal)</span>
         </div>
       )}
       {hasPendingWithdrawal && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+        <div
+          className="rounded-lg p-2 text-xs"
+          style={{ border: '1px solid rgba(245,200,66,0.3)', background: 'rgba(245,200,66,0.08)', color: '#f5c842' }}
+        >
           You have a pending withdrawal request in the queue.
         </div>
       )}
@@ -299,30 +306,30 @@ function WithdrawTab({ address }: { address: Address }) {
           )}
         </div>
         {exceedsAvailable && (
-          <p className="text-xs text-destructive">
+          <p className="text-xs" style={{ color: '#e05c6b' }}>
             Exceeds available shares ({formatUsdc(availableShares)}).
           </p>
         )}
       </div>
 
       {parsedShares > 0n && previewRedeem !== undefined && (
-        <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+        <div className="rounded-lg p-3 text-sm space-y-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1e2530' }}>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Total redemption value</span>
-            <span>${formatUsdc(previewRedeem)} USDC</span>
+            <span style={{ color: '#5a6478' }}>Total redemption value</span>
+            <span style={{ color: '#e8ecf4' }}>${formatUsdc(previewRedeem)} USDC</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Immediately available</span>
-            <span>${formatUsdc(previewRedeemFree)} USDC</span>
+            <span style={{ color: '#5a6478' }}>Immediately available</span>
+            <span style={{ color: '#2ecc8f' }}>${formatUsdc(previewRedeemFree)} USDC</span>
           </div>
           {willBeQueued && (
-            <div className="flex justify-between text-amber-600">
-              <span>Queued (locked capital)</span>
-              <span>${formatUsdc(lockedAmount)} USDC</span>
+            <div className="flex justify-between">
+              <span style={{ color: '#f5c842' }}>Queued (locked capital)</span>
+              <span style={{ color: '#f5c842' }}>${formatUsdc(lockedAmount)} USDC</span>
             </div>
           )}
           {willBeQueued && (
-            <p className="text-xs text-amber-700 pt-1">
+            <p className="text-xs pt-1" style={{ color: '#5a6478' }}>
               Part of this withdrawal will be queued and processed after upcoming flight settlements.
             </p>
           )}
@@ -330,10 +337,15 @@ function WithdrawTab({ address }: { address: Address }) {
       )}
 
       {success ? (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          {willBeQueued
-            ? 'Withdrawal submitted. Queued portion will be credited after settlement.'
-            : 'Withdrawal processed. Check your collectable balance below.'}
+        <div
+          className="rounded-lg p-3 text-sm"
+          style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.08)' }}
+        >
+          <p style={{ color: '#2ecc8f' }}>
+            {willBeQueued
+              ? 'Withdrawal submitted. Queued portion will be credited after settlement.'
+              : 'Withdrawal processed. Check your collectable balance below.'}
+          </p>
         </div>
       ) : (
         <Button
@@ -346,7 +358,10 @@ function WithdrawTab({ address }: { address: Address }) {
       )}
 
       {error && (
-        <p className="text-sm text-destructive rounded border border-destructive/20 bg-destructive/5 p-2">
+        <p
+          className="text-sm rounded p-2"
+          style={{ color: '#e05c6b', border: '1px solid rgba(224,92,107,0.2)', background: 'rgba(224,92,107,0.08)' }}
+        >
           {error}
         </p>
       )}
@@ -376,18 +391,21 @@ function CollectSection({ address }: { address: Address }) {
   if (!myClaimableBalance || myClaimableBalance === 0n) return null
 
   return (
-    <div className="rounded-xl border border-green-200 bg-green-50 p-4 space-y-3">
+    <div
+      className="rounded-xl p-5 space-y-3"
+      style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.06)' }}
+    >
       <div>
-        <p className="font-semibold text-green-900">Funds ready to collect</p>
-        <p className="text-2xl font-bold text-green-700 mt-1">
+        <p className="font-semibold" style={{ color: '#2ecc8f' }}>Funds ready to collect</p>
+        <p className="text-2xl font-bold mt-1" style={{ color: '#2ecc8f' }}>
           ${formatUsdc(myClaimableBalance)} USDC
         </p>
-        <p className="text-xs text-green-700 mt-0.5">
+        <p className="text-xs mt-0.5" style={{ color: '#5a6478' }}>
           Your withdrawal has been processed and is ready to receive.
         </p>
       </div>
       {success ? (
-        <p className="text-sm text-green-800 font-medium">
+        <p className="text-sm font-medium" style={{ color: '#2ecc8f' }}>
           Collected! USDC sent to your wallet.
         </p>
       ) : (
@@ -406,12 +424,13 @@ function CollectSection({ address }: { address: Address }) {
             }
           }}
           disabled={isPending || isConfirming}
-          className="bg-green-700 hover:bg-green-800 text-white"
+          className="font-semibold"
+          style={{ background: '#2ecc8f', color: '#080a0f' }}
         >
           {isPending ? 'Confirm in wallet…' : isConfirming ? 'Processing…' : `Collect $${formatUsdc(myClaimableBalance)} USDC`}
         </Button>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm" style={{ color: '#e05c6b' }}>{error}</p>}
     </div>
   )
 }
@@ -432,8 +451,8 @@ export default function VaultPage() {
 
   if (!address) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">Vault</h1>
+      <div className="space-y-6" style={{ animation: 'fade-in-up 0.4s ease both' }}>
+        <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>Vault</h1>
         <div className="max-w-sm">
           <ConnectPrompt />
         </div>
@@ -442,75 +461,68 @@ export default function VaultPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{ animation: 'fade-in-up 0.4s ease both' }}>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Vault</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>Vault</h1>
+        <p className="mt-1" style={{ color: '#5a6478' }}>
           Deposit USDC to back flights and earn yield from on-time premiums.
         </p>
       </div>
 
       {/* Vault-level stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">TVL</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">${formatUsdc(totalManagedAssets)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Share Price</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">
-              {totalManagedAssets !== undefined && totalShares !== undefined
-                ? formatSharePrice(totalManagedAssets, totalShares)
-                : '—'}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Free Capital</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">${formatUsdc(freeCapital)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Locked</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xl font-bold">${formatUsdc(lockedCapital)}</p>
-          </CardContent>
-        </Card>
+        {[
+          { label: 'TVL', value: `$${formatUsdc(totalManagedAssets)}`, color: '#3b8ef3' },
+          {
+            label: 'Share Price',
+            value: totalManagedAssets !== undefined && totalShares !== undefined
+              ? formatSharePrice(totalManagedAssets, totalShares)
+              : '—',
+            color: '#e8ecf4',
+          },
+          { label: 'Free Capital', value: `$${formatUsdc(freeCapital)}`, color: '#2ecc8f' },
+          { label: 'Locked', value: `$${formatUsdc(lockedCapital)}`, color: '#f5c842' },
+        ].map(({ label, value, color }, i) => (
+          <div
+            key={label}
+            className="rounded-xl p-4"
+            style={{
+              border: '1px solid #1e2530',
+              background: '#0f1218',
+              animation: 'fade-in-up 0.4s ease both',
+              animationDelay: `${i * 50}ms`,
+            }}
+          >
+            <p className="text-xs font-medium uppercase tracking-wide" style={{ color: '#5a6478' }}>{label}</p>
+            <p className="text-xl font-bold mt-1" style={{ color }}>{value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Per-user summary */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 rounded-xl border p-4 bg-muted/30">
+      <div
+        className="grid grid-cols-2 gap-4 sm:grid-cols-3 rounded-xl p-4"
+        style={{ border: '1px solid #1e2530', background: '#0f1218' }}
+      >
         <div>
-          <p className="text-xs text-muted-foreground">Your shares</p>
-          <p className="text-lg font-semibold">{formatUsdc(myShares)}</p>
+          <p className="text-xs" style={{ color: '#5a6478' }}>Your shares</p>
+          <p className="text-lg font-semibold" style={{ color: '#e8ecf4' }}>{formatUsdc(myShares)}</p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Estimated value</p>
-          <p className="text-lg font-semibold">
+          <p className="text-xs" style={{ color: '#5a6478' }}>Estimated value</p>
+          <p className="text-lg font-semibold" style={{ color: '#3b8ef3' }}>
             ${totalManagedAssets !== undefined && totalShares !== undefined && myShares !== undefined && totalShares > 0n
               ? formatUsdc((myShares * totalManagedAssets) / totalShares)
               : '—'}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Projected APY</p>
-          <p className="text-lg font-semibold text-green-600">37%</p>
+          <p className="text-xs" style={{ color: '#5a6478' }}>Projected APY</p>
+          <p className="text-lg font-semibold" style={{ color: '#2ecc8f' }}>37%</p>
         </div>
       </div>
 
-      {/* Collect section (shown when funds are ready) */}
+      {/* Collect section */}
       {myClaimableBalance !== undefined && myClaimableBalance > 0n && (
         <CollectSection address={address} />
       )}

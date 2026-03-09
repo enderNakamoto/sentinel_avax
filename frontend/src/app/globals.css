@@ -83,37 +83,67 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.87 0.00 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.371 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Sentinel Protocol dark theme — presentation colors */
+  --background: #080a0f;
+  --foreground: #e8ecf4;
+  --card: #0f1218;
+  --card-foreground: #e8ecf4;
+  --popover: #0f1218;
+  --popover-foreground: #e8ecf4;
+  --primary: #3b8ef3;
+  --primary-foreground: #e8ecf4;
+  --secondary: #1e2530;
+  --secondary-foreground: #e8ecf4;
+  --muted: #1e2530;
+  --muted-foreground: #5a6478;
+  --accent: #1e2530;
+  --accent-foreground: #e8ecf4;
+  --destructive: #e05c6b;
+  --border: #1e2530;
+  --input: #1e2530;
+  --ring: #3b8ef3;
+  --chart-1: #3b8ef3;
+  --chart-2: #2ecc8f;
+  --chart-3: #f5c842;
+  --chart-4: #e05c6b;
+  --chart-5: #5a6478;
+  --sidebar: #0f1218;
+  --sidebar-foreground: #e8ecf4;
+  --sidebar-primary: #3b8ef3;
+  --sidebar-primary-foreground: #e8ecf4;
+  --sidebar-accent: #1e2530;
+  --sidebar-accent-foreground: #e8ecf4;
+  --sidebar-border: #1e2530;
+  --sidebar-ring: #3b8ef3;
+
+  /* Sentinel brand tokens */
+  --sentinel-blue: #3b8ef3;
+  --sentinel-blue-dim: #1a3a6b;
+  --sentinel-blue-glow: rgba(59, 142, 243, 0.25);
+  --sentinel-green: #2ecc8f;
+  --sentinel-green-dim: #0d3d27;
+  --sentinel-green-glow: rgba(46, 204, 143, 0.2);
+  --sentinel-red: #e05c6b;
+  --sentinel-red-dim: #5c1a22;
+  --sentinel-yellow: #f5c842;
+  --sentinel-surface: #0f1218;
+  --sentinel-muted: #5a6478;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(59, 142, 243, 0.15); }
+  50% { box-shadow: 0 0 40px rgba(59, 142, 243, 0.3); }
 }
 
 @layer base {

@@ -17,7 +17,6 @@ import { ConnectPrompt } from '@/components/ConnectPrompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface Route {
@@ -43,7 +42,6 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
   )
   const { data: usdcBalance } = useUsdcBalance(walletAddress)
 
-  // Pool address for selected date
   const { data: poolAddress, isLoading: poolLoading } = useReadContract({
     address: fujiAddresses.controller,
     abi: controllerAbi,
@@ -56,7 +54,6 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
   const poolExists =
     !!poolAddress && (poolAddress as string) !== ZERO_ADDRESS
 
-  // Buyer count on existing pool
   const { data: buyerCount } = useReadContract({
     address: poolAddress as Address,
     abi: flightPoolAbi,
@@ -64,7 +61,6 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
     query: { enabled: poolExists },
   })
 
-  // Has wallet already bought on this pool
   const { data: hasBought } = useReadContract({
     address: poolAddress as Address,
     abi: flightPoolAbi,
@@ -73,7 +69,6 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
     query: { enabled: poolExists && !!walletAddress },
   })
 
-  // Solvency check (route-level, not date-specific)
   const { data: isSolvent } = useReadContract({
     address: fujiAddresses.controller,
     abi: controllerAbi,
@@ -128,7 +123,6 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
     }
   }
 
-  // Reset success when date changes
   useEffect(() => { setSuccess(false); setBuyHash(undefined); setError('') }, [date])
 
   const isPending = isBuyPending || isBuyConfirming || isApproving
@@ -147,31 +141,31 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
         <div className="flex items-start justify-between gap-2">
           <div>
             <CardTitle className="text-lg">{route.flightId}</CardTitle>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="text-sm mt-0.5" style={{ color: '#5a6478' }}>
               {route.origin} → {route.destination}
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-sm text-muted-foreground">Premium</p>
-            <p className="font-semibold">${formatUsdc(route.premium)} USDC</p>
+            <p className="text-xs" style={{ color: '#5a6478' }}>Premium</p>
+            <p className="font-semibold" style={{ color: '#e8ecf4' }}>${formatUsdc(route.premium)} USDC</p>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Payout info */}
-        <div className="rounded-lg bg-muted p-3 text-sm space-y-1">
+        <div className="rounded-lg p-3 text-sm space-y-1" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1e2530' }}>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Payout if delayed / cancelled</span>
-            <span className="font-semibold text-green-600">${formatUsdc(route.payoff)} USDC</span>
+            <span style={{ color: '#5a6478' }}>Payout if delayed / cancelled</span>
+            <span className="font-semibold" style={{ color: '#2ecc8f' }}>${formatUsdc(route.payoff)} USDC</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Premium</span>
-            <span>${formatUsdc(route.premium)} USDC</span>
+            <span style={{ color: '#5a6478' }}>Premium</span>
+            <span style={{ color: '#e8ecf4' }}>${formatUsdc(route.premium)} USDC</span>
           </div>
           {poolExists && buyerCount !== undefined && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Buyers on this date</span>
-              <span>{buyerCount.toString()}</span>
+              <span style={{ color: '#5a6478' }}>Buyers on this date</span>
+              <span style={{ color: '#3b8ef3' }}>{buyerCount.toString()}</span>
             </div>
           )}
         </div>
@@ -193,17 +187,17 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
         {date && !poolLoading && (
           <div className="space-y-1">
             {isSolvent === false && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm" style={{ color: '#e05c6b' }}>
                 Vault is at capacity for this route — purchase not available.
               </p>
             )}
             {hasBought && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm" style={{ color: '#5a6478' }}>
                 You already have insurance on this flight.
               </p>
             )}
             {insufficientBalance && !hasBought && (
-              <p className="text-sm text-destructive">
+              <p className="text-sm" style={{ color: '#e05c6b' }}>
                 Insufficient USDC balance (need ${formatUsdc(route.premium)}).
               </p>
             )}
@@ -214,13 +208,16 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
         {!walletAddress ? (
           <ConnectPrompt />
         ) : success ? (
-          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            <p className="font-medium">Insurance purchased!</p>
-            <p className="text-xs mt-1">
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.08)' }}
+          >
+            <p className="font-medium" style={{ color: '#2ecc8f' }}>Insurance purchased!</p>
+            <p className="text-xs mt-1" style={{ color: '#5a6478' }}>
               Flight {route.flightId} on {date}. Payout: ${formatUsdc(route.payoff)} USDC if delayed or cancelled.
             </p>
             {poolAddress && (
-              <p className="text-xs mt-1 font-mono text-muted-foreground">
+              <p className="text-xs mt-1 font-mono" style={{ color: '#5a6478' }}>
                 Pool: {(poolAddress as string).slice(0, 10)}…
               </p>
             )}
@@ -253,7 +250,10 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
         ) : null}
 
         {error && (
-          <p className="text-sm text-destructive rounded border border-destructive/20 bg-destructive/5 p-2">
+          <p
+            className="text-sm rounded p-2"
+            style={{ color: '#e05c6b', border: '1px solid rgba(224,92,107,0.2)', background: 'rgba(224,92,107,0.08)' }}
+          >
             {error}
           </p>
         )}
@@ -267,9 +267,9 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
 function UsdcBalance({ address }: { address: Address }) {
   const { data: balance } = useUsdcBalance(address)
   return (
-    <div className="text-sm text-muted-foreground">
+    <div className="text-sm" style={{ color: '#5a6478' }}>
       Your MockUSDC balance:{' '}
-      <span className="font-medium text-foreground">${formatUsdc(balance)}</span>
+      <span className="font-medium" style={{ color: '#3b8ef3' }}>${formatUsdc(balance)}</span>
     </div>
   )
 }
@@ -286,10 +286,10 @@ export default function RoutesPage() {
   const routes = ((routesData ?? []) as Route[]).filter((r) => r.active)
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{ animation: 'fade-in-up 0.4s ease both' }}>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Buy Insurance</h1>
-        <p className="text-muted-foreground mt-1">
+        <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>Buy Insurance</h1>
+        <p className="mt-1" style={{ color: '#5a6478' }}>
           Select a route, pick your departure date, and insure your flight.
         </p>
       </div>
@@ -303,11 +303,11 @@ export default function RoutesPage() {
       )}
 
       {isLoading && (
-        <p className="text-sm text-muted-foreground">Loading approved routes…</p>
+        <p className="text-sm" style={{ color: '#5a6478' }}>Loading approved routes…</p>
       )}
 
       {!isLoading && routes.length === 0 && (
-        <p className="text-sm text-muted-foreground">No routes approved yet.</p>
+        <p className="text-sm" style={{ color: '#5a6478' }}>No routes approved yet.</p>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -321,8 +321,8 @@ export default function RoutesPage() {
       </div>
 
       {address && routes.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Payments use MockUSDC on Fuji testnet. Your balance is shown in each route card.
+        <p className="text-xs" style={{ color: '#5a6478' }}>
+          Payments use MockUSDC on Fuji testnet.
         </p>
       )}
     </div>

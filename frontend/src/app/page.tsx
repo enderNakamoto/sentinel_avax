@@ -1,256 +1,273 @@
 'use client'
 
-import { useReadContract, useReadContracts } from 'wagmi'
-import type { Address } from 'viem'
-import {
-  controllerAbi,
-  riskVaultAbi,
-  flightPoolAbi,
-  oracleAggregatorAbi,
-  fujiAddresses,
-} from '@/contracts'
-import { formatUsdc, formatSharePrice } from '@/lib/format'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import Link from 'next/link'
+import { useReadContracts } from 'wagmi'
+import { controllerAbi, riskVaultAbi, fujiAddresses } from '@/contracts'
+import { formatUsdc } from '@/lib/format'
 
-// FlightPool.Outcome: 0=Pending 1=NotDelayed 2=Delayed 3=Cancelled
-// OracleAggregator.FlightStatus: 0=Unknown 1=OnTime 2=Delayed 3=Cancelled
-
-const STATUS_LABELS: Record<number, string> = {
-  0: 'Unknown',
-  1: 'On Time',
-  2: 'Delayed',
-  3: 'Cancelled',
-}
-
-const STATUS_VARIANT: Record<number, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  0: 'outline',
-  1: 'secondary',
-  2: 'destructive',
-  3: 'destructive',
-}
-
-function ActivePoolsTable() {
-  // Step 1: get active pool addresses
-  const { data: poolAddresses, isLoading: poolsLoading } = useReadContract({
-    address: fujiAddresses.controller,
-    abi: controllerAbi,
-    functionName: 'getActivePools',
-  })
-
-  const pools = (poolAddresses ?? []) as Address[]
-
-  // Step 2: pool metadata (flightId, flightDate, buyerCount) — 3 reads per pool
-  const { data: metaData } = useReadContracts({
-    contracts: pools.flatMap((addr) => [
-      { address: addr, abi: flightPoolAbi, functionName: 'flightId' as const },
-      { address: addr, abi: flightPoolAbi, functionName: 'flightDate' as const },
-      { address: addr, abi: flightPoolAbi, functionName: 'buyerCount' as const },
-    ]),
-    query: { enabled: pools.length > 0 },
-  })
-
-  const parsedMeta = pools.map((addr, i) => ({
-    address: addr,
-    flightId: (metaData?.[i * 3]?.result as string | undefined) ?? '',
-    flightDate: (metaData?.[i * 3 + 1]?.result as string | undefined) ?? '',
-    buyerCount: (metaData?.[i * 3 + 2]?.result as bigint | undefined) ?? 0n,
-  }))
-
-  // Step 3: oracle status for each pool
-  const { data: statusData } = useReadContracts({
-    contracts: parsedMeta.map((p) => ({
-      address: fujiAddresses.oracleAggregator as Address,
-      abi: oracleAggregatorAbi,
-      functionName: 'getFlightStatus' as const,
-      args: [p.flightId, p.flightDate] as const,
-    })),
-    query: {
-      enabled: parsedMeta.length > 0 && parsedMeta.every((p) => !!p.flightId),
-    },
-  })
-
-  if (poolsLoading) return <p className="text-sm text-muted-foreground">Loading active flights…</p>
-  if (pools.length === 0)
-    return <p className="text-sm text-muted-foreground">No active flights being tracked.</p>
-
+function StatCard({
+  label,
+  value,
+  sub,
+  color = '#3b8ef3',
+  delay = 0,
+}: {
+  label: string
+  value: string
+  sub?: string
+  color?: string
+  delay?: number
+}) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Flight</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead>Buyers</TableHead>
-          <TableHead>Oracle Status</TableHead>
-          <TableHead className="font-mono text-xs">Pool</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {parsedMeta.map((p, i) => {
-          const statusNum = Number((statusData?.[i]?.result as number | undefined) ?? 0)
-          return (
-            <TableRow key={p.address}>
-              <TableCell className="font-medium">{p.flightId || '…'}</TableCell>
-              <TableCell>{p.flightDate || '…'}</TableCell>
-              <TableCell>{p.buyerCount.toString()}</TableCell>
-              <TableCell>
-                <Badge variant={STATUS_VARIANT[statusNum]}>
-                  {STATUS_LABELS[statusNum] ?? 'Unknown'}
-                </Badge>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {p.address.slice(0, 8)}…{p.address.slice(-4)}
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
+    <div
+      className="rounded-xl p-5 flex flex-col gap-1"
+      style={{
+        border: '1px solid #1e2530',
+        background: '#0f1218',
+        animation: `fade-in-up 0.5s ease both`,
+        animationDelay: `${delay}ms`,
+      }}
+    >
+      <p style={{ color: '#5a6478', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </p>
+      <p className="text-2xl font-bold" style={{ color }}>
+        {value}
+      </p>
+      {sub && <p style={{ color: '#5a6478', fontSize: '0.75rem' }}>{sub}</p>}
+    </div>
   )
 }
 
-export default function Dashboard() {
-  // Controller stats
+function StepCard({
+  number,
+  title,
+  body,
+  delay = 0,
+}: {
+  number: string
+  title: string
+  body: string
+  delay?: number
+}) {
+  return (
+    <div
+      className="rounded-xl p-6 flex flex-col gap-3"
+      style={{
+        border: '1px solid #1e2530',
+        background: '#0f1218',
+        animation: `fade-in-up 0.5s ease both`,
+        animationDelay: `${delay}ms`,
+      }}
+    >
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
+        style={{ background: 'rgba(59,142,243,0.15)', color: '#3b8ef3' }}
+      >
+        {number}
+      </div>
+      <p className="font-semibold" style={{ color: '#e8ecf4' }}>{title}</p>
+      <p className="text-sm" style={{ color: '#5a6478' }}>{body}</p>
+    </div>
+  )
+}
+
+export default function LandingPage() {
   const { data: statsData } = useReadContracts({
     contracts: [
       { address: fujiAddresses.controller, abi: controllerAbi, functionName: 'totalPoliciesSold' as const },
       { address: fujiAddresses.controller, abi: controllerAbi, functionName: 'totalPremiumsCollected' as const },
       { address: fujiAddresses.controller, abi: controllerAbi, functionName: 'totalPayoutsDistributed' as const },
-      { address: fujiAddresses.controller, abi: controllerAbi, functionName: 'activeFlightCount' as const },
       { address: fujiAddresses.riskVault, abi: riskVaultAbi, functionName: 'totalManagedAssets' as const },
-      { address: fujiAddresses.riskVault, abi: riskVaultAbi, functionName: 'totalShares' as const },
     ],
   })
 
   const totalPoliciesSold = statsData?.[0]?.result as bigint | undefined
   const totalPremiumsCollected = statsData?.[1]?.result as bigint | undefined
   const totalPayoutsDistributed = statsData?.[2]?.result as bigint | undefined
-  const activeFlightCount = statsData?.[3]?.result as bigint | undefined
-  const totalManagedAssets = statsData?.[4]?.result as bigint | undefined
-  const totalShares = statsData?.[5]?.result as bigint | undefined
+  const tvl = statsData?.[3]?.result as bigint | undefined
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
-          Protocol overview — Avalanche Fuji testnet
+    <div className="space-y-20">
+      {/* Hero */}
+      <div className="text-center space-y-6 pt-8" style={{ animation: 'fade-in-up 0.6s ease both' }}>
+        <div
+          className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium"
+          style={{ background: 'rgba(59,142,243,0.1)', border: '1px solid rgba(59,142,243,0.3)', color: '#3b8ef3' }}
+        >
+          <span>⚡</span> Powered by Chainlink CRE + Avalanche
+        </div>
+
+        <h1
+          className="text-5xl font-bold tracking-tight sm:text-6xl"
+          style={{ color: '#e8ecf4', lineHeight: 1.1 }}
+        >
+          Your flight delayed?<br />
+          <span style={{ color: '#3b8ef3' }}>Get paid automatically.</span>
+        </h1>
+
+        <p className="text-lg max-w-2xl mx-auto" style={{ color: '#5a6478' }}>
+          Sentinel Protocol is fully on-chain parametric flight insurance.
+          Pay a fixed USDC premium — if your flight is delayed or cancelled,
+          your payout arrives the moment the oracle confirms it. No claims. No forms. No waiting.
         </p>
+
+        <div className="flex items-center justify-center gap-4 flex-wrap">
+          <Link
+            href="/routes"
+            className="rounded-lg px-6 py-3 text-sm font-semibold transition-all"
+            style={{ background: '#3b8ef3', color: '#e8ecf4' }}
+          >
+            Insure My Flight →
+          </Link>
+          <Link
+            href="/vault"
+            className="rounded-lg px-6 py-3 text-sm font-semibold transition-all"
+            style={{ border: '1px solid #1e2530', background: '#0f1218', color: '#e8ecf4' }}
+          >
+            Earn as Underwriter
+          </Link>
+        </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Policies Sold
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {totalPoliciesSold?.toString() ?? '—'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Premiums Collected
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${formatUsdc(totalPremiumsCollected)}</p>
-            <p className="text-xs text-muted-foreground">USDC</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Payouts Distributed
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${formatUsdc(totalPayoutsDistributed)}</p>
-            <p className="text-xs text-muted-foreground">USDC</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Flights
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {activeFlightCount?.toString() ?? '—'}
-            </p>
-          </CardContent>
-        </Card>
+      {/* Live stats bar */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard
+          label="Policies Sold"
+          value={totalPoliciesSold?.toString() ?? '—'}
+          delay={100}
+          color="#3b8ef3"
+        />
+        <StatCard
+          label="Premiums Collected"
+          value={totalPremiumsCollected !== undefined ? `$${formatUsdc(totalPremiumsCollected)}` : '—'}
+          sub="USDC"
+          delay={150}
+          color="#f5c842"
+        />
+        <StatCard
+          label="Payouts Distributed"
+          value={totalPayoutsDistributed !== undefined ? `$${formatUsdc(totalPayoutsDistributed)}` : '—'}
+          sub="USDC"
+          delay={200}
+          color="#2ecc8f"
+        />
+        <StatCard
+          label="Vault TVL"
+          value={tvl !== undefined ? `$${formatUsdc(tvl)}` : '—'}
+          sub="USDC under management"
+          delay={250}
+          color="#3b8ef3"
+        />
       </div>
 
-      {/* Vault stats */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Vault TVL
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${formatUsdc(totalManagedAssets)}</p>
-            <p className="text-xs text-muted-foreground">USDC under management</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Share Price
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {totalManagedAssets !== undefined && totalShares !== undefined
-                ? formatSharePrice(totalManagedAssets, totalShares)
-                : '—'}
-            </p>
-            <p className="text-xs text-muted-foreground">USDC per share</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Projected APY
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600">37%</p>
-            <p className="text-xs text-muted-foreground">Standin estimate</p>
-          </CardContent>
-        </Card>
+      {/* How it works */}
+      <div className="space-y-8">
+        <div style={{ animation: 'fade-in-up 0.5s ease both', animationDelay: '300ms' }}>
+          <p style={{ color: '#3b8ef3', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600 }}>
+            How it works
+          </p>
+          <h2 className="text-3xl font-bold mt-2" style={{ color: '#e8ecf4' }}>
+            Three steps. Fully automatic.
+          </h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StepCard
+            number="1"
+            title="Choose a route + date"
+            body="Browse approved routes and pick your departure date. See live capacity and buyer count before committing."
+            delay={350}
+          />
+          <StepCard
+            number="2"
+            title="Pay the premium"
+            body="Approve and pay a fixed USDC premium. Your policy is recorded on-chain immediately — no intermediary."
+            delay={400}
+          />
+          <StepCard
+            number="3"
+            title="Get paid if delayed"
+            body="Chainlink CRE polls FlightAware every 10 minutes. The moment your flight is confirmed delayed, your payout is sent automatically."
+            delay={450}
+          />
+        </div>
       </div>
 
-      {/* Active flights table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Flights</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ActivePoolsTable />
-        </CardContent>
-      </Card>
+      {/* Two roles */}
+      <div className="grid gap-6 sm:grid-cols-2" style={{ animation: 'fade-in-up 0.5s ease both', animationDelay: '500ms' }}>
+        {/* Traveler */}
+        <div
+          className="rounded-xl p-8 space-y-4"
+          style={{ border: '1px solid #1a3a6b', background: 'rgba(59,142,243,0.06)' }}
+        >
+          <div className="text-2xl">✈️</div>
+          <h3 className="text-xl font-bold" style={{ color: '#e8ecf4' }}>Traveler</h3>
+          <p className="text-sm" style={{ color: '#5a6478' }}>
+            Insure your flight for a fixed premium. If delayed 45+ minutes or cancelled, receive your full payout automatically — no claim required.
+          </p>
+          <ul className="text-sm space-y-1" style={{ color: '#5a6478' }}>
+            <li>✓ Fixed premium, fixed payout</li>
+            <li>✓ Paid automatically on settlement</li>
+            <li>✓ Pull claim fallback if push fails</li>
+          </ul>
+          <Link
+            href="/routes"
+            className="inline-block rounded-lg px-4 py-2 text-sm font-semibold"
+            style={{ background: 'rgba(59,142,243,0.15)', color: '#3b8ef3', border: '1px solid rgba(59,142,243,0.3)' }}
+          >
+            Browse Routes →
+          </Link>
+        </div>
+
+        {/* Underwriter */}
+        <div
+          className="rounded-xl p-8 space-y-4"
+          style={{ border: '1px solid #0d3d27', background: 'rgba(46,204,143,0.06)' }}
+        >
+          <div className="text-2xl">🏦</div>
+          <h3 className="text-xl font-bold" style={{ color: '#e8ecf4' }}>Underwriter</h3>
+          <p className="text-sm" style={{ color: '#5a6478' }}>
+            Deposit USDC into the RiskVault to back flight policies. Earn premium income from every on-time flight. Projected 37% APY.
+          </p>
+          <ul className="text-sm space-y-1" style={{ color: '#5a6478' }}>
+            <li>✓ Earn USDC premiums passively</li>
+            <li>✓ FIFO withdrawal queue — no lockups</li>
+            <li>✓ Share price accrues with income</li>
+          </ul>
+          <Link
+            href="/vault"
+            className="inline-block rounded-lg px-4 py-2 text-sm font-semibold"
+            style={{ background: 'rgba(46,204,143,0.15)', color: '#2ecc8f', border: '1px solid rgba(46,204,143,0.3)' }}
+          >
+            Go to Vault →
+          </Link>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div
+        className="rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4"
+        style={{ border: '1px solid #1e2530', background: '#0f1218' }}
+      >
+        <div>
+          <p className="font-semibold" style={{ color: '#e8ecf4' }}>Sentinel Protocol</p>
+          <p className="text-sm" style={{ color: '#5a6478' }}>Parametric flight insurance on Avalanche Fuji testnet</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <span
+            className="rounded-full px-3 py-1 text-xs font-semibold"
+            style={{ background: 'rgba(55,91,210,0.15)', color: '#375bd2', border: '1px solid rgba(55,91,210,0.3)' }}
+          >
+            Chainlink CRE
+          </span>
+          <span
+            className="rounded-full px-3 py-1 text-xs font-semibold"
+            style={{ background: 'rgba(232,65,66,0.15)', color: '#e84142', border: '1px solid rgba(232,65,66,0.3)' }}
+          >
+            Avalanche
+          </span>
+        </div>
+      </div>
     </div>
   )
 }

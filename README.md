@@ -12,7 +12,8 @@ The production design is fully autonomous via a single [Chainlink CRE](specs/int
 
 ## Quick links
 
-- **Live demo (Vercel)**: https://your-vercel-deployment-url.vercel.app
+- **Live demo (Vercel)**: https://sentinel-avax-7e2l-cbgo86fxd-enders-projects.vercel.app/
+- **Presentation Slides**: https://sentinel-avax-cy1qrkuf0-enders-projects.vercel.app/ 
 - **Deploy contracts & CRE workflow**: [deploy.md](deploy.md)
 - **Run tests & simulations**: [testing.md](testing.md)
 - **Centralized cron (CRE simulation)**: [`centralized_cron/README.md`](centralized_cron/README.md)
@@ -130,4 +131,3 @@ The `frontend/` directory contains a Next.js app (wagmi + RainbowKit) for wallet
 | Token | USDC (6 decimals) |
 | Frontend | Next.js, wagmi, viem, Reown AppKit |
 | Network | Avalanche C-Chain (Fuji testnet → mainnet) |
-

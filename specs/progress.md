@@ -1,7 +1,7 @@
 # Flight Delay Insurance Protocol — Progress Tracker
 
 Last Updated: 2026-03-08
-Current Phase: 2 — RecoveryPool (planned)
+Current Phase: 2 — RecoveryPool (in_progress)
 
 ---
 
@@ -11,7 +11,7 @@ Current Phase: 2 — RecoveryPool (planned)
 |---|-------|--------|---------|-----------|
 | 0 | Foundry Project Init | complete | 2026-03-08 | 2026-03-08 |
 | 1 | MockUSDC | complete | 2026-03-08 | 2026-03-08 |
-| 2 | RecoveryPool | planned | — | — |
+| 2 | RecoveryPool | in_progress | 2026-03-08 | — |
 | 3 | GovernanceModule | planned | — | — |
 | 4 | RiskVault | planned | — | — |
 | 5 | OracleAggregator | planned | — | — |

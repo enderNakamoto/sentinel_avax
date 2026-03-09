@@ -20,11 +20,11 @@ On Linux, run: `tree -L 3 -I 'node_modules|__pycache__|.git|dist|build'`
 
 ### 2. Read Core Documentation
 
-- Read the README.md at the project root
+- Read the README.md at the project root — includes deployed contract addresses and explorer links
+- Read deploy.md — deployment guide covering contracts, CRE workflow setup, and faucet steps
+- Read testing.md — all test commands (Forge, Jest, local simulation)
 - Read the architecture.md in specs folder or any archicture documentation
-- Read the PRD.md or similar spec file
 - Read CLAUDE.md or similar global rules file
-- Read README files at project root and major directories
 - Read any integration documentation in spec/integrations folder
 
 ### 3. Identify the smart contracts [if it is a web3 project]
@@ -91,6 +91,11 @@ Provide a concise summary covering:
 - Code style and conventions observed
 - Documentation standards
 - Testing approach
+
+### Deployed Contracts
+- List any contracts already deployed to testnet/mainnet (from README.md deployed contracts table)
+- Note which network and whether they are verified
+- Note which post-deploy wiring steps remain (e.g. CRE forwarder not yet wired)
 
 ### Current State
 - Active branch and any uncommitted changes

@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel Protocol</title>
+<style>
+  :root {
+    --bg: #080a0f;
+    --surface: #0f1218;
+    --border: #1e2530;
+    --blue: #3b8ef3;
+    --blue-dim: #1a3a6b;
+    --blue-glow: rgba(59,142,243,0.25);
+    --red: #e05c6b;
+    --red-dim: #5c1a22;
+    --red-glow: rgba(224,92,107,0.25);
+    --green: #2ecc8f;
+    --green-dim: #0d3d27;
+    --green-glow: rgba(46,204,143,0.2);
+    --yellow: #f5c842;
+    --yellow-glow: rgba(245,200,66,0.2);
+    --white: #e8ecf4;
+    --muted: #5a6478;
+    --chainlink: #375bd2;
+    --avax: #e84142;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    user-select: none;
+  }
+
+  /* ── SLIDE DECK ── */
+  .deck {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: translateX(80px);
+    transition: opacity 0.55s cubic-bezier(.4,0,.2,1),
+                transform 0.55s cubic-bezier(.4,0,.2,1);
+    pointer-events: none;
+    padding: 48px;
+  }
+  .slide.active {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: all;
+  }
+  .slide.exit {
+    opacity: 0;
+    transform: translateX(-80px);
+    pointer-events: none;
+  }
+
+  /* ── NAV ── */
+  .nav {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    z-index: 100;
+  }
+  .nav-dots {
+    display: flex;
+    gap: 10px;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .dot.active { background: var(--blue); transform: scale(1.4); }
+
+  .nav-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .nav-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  .slide-counter {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  /* ── LOGO CHIP ── */
+  .logo {
+    position: fixed;
+    top: 24px; left: 32px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--white);
+    opacity: 0.7;
+  }
+  .logo span { color: var(--blue); }
+
+  /* ── TYPOGRAPHY ── */
+  .tag {
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 16px;
+  }
+  .tag.red { color: var(--red); }
+  .tag.green { color: var(--green); }
+
+  h1 {
+    font-size: clamp(32px, 5vw, 58px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  h2 {
+    font-size: clamp(22px, 3.5vw, 38px);
+    font-weight: 700;
+    line-height: 1.15;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  p.lead {
+    font-size: clamp(14px, 1.8vw, 18px);
+    color: #8a93a8;
+    line-height: 1.7;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    max-width: 620px;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+  }
+  .card.blue { border-color: var(--blue-dim); background: rgba(59,142,243,0.06); }
+  .card.red  { border-color: var(--red-dim);  background: rgba(224,92,107,0.06); }
+  .card.green{ border-color: var(--green-dim);background: rgba(46,204,143,0.06); }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* SLIDE 1 — PROBLEM                                       */
+  /* ─────────────────────────────────────────────────────── */
+  #s1 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    width: 100%;
+    max-width: 1100px;
+    align-items: center;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 32px;
+  }
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stat-box .num {
+    font-size: 28px;
+    font-weight: 800;
+    font-family: -apple-system, sans-serif;
+    color: var(--white);
+  }
+  .stat-box .num.blue { color: var(--blue); }
+  .stat-box .num.red  { color: var(--red); }
+  .stat-box .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .problem-list { list-style: none; margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .problem-list li {
+    display: flex; gap: 12px; align-items: flex-start;
+    font-size: 15px; color: #8a93a8;
+    font-family: -apple-system, sans-serif;
+  }
+  .problem-list li .icon {
+    width: 24px; height: 24px; border-radius: 6px;
+    background: rgba(224,92,107,0.15);
+    color: var(--red);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0; margin-top: 1px;
+  }
+  .solution-list li .icon { background: rgba(46,204,143,0.12); color: var(--green); }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* SLIDE 2 — ARCHITECTURE                                  */
+  /* ─────────────────────────────────────────────────────── */
+  #s2 { padding: 32px; }
+  .arch-canvas {
+    width: 100%;
+    max-width: 1000px;
+    position: relative;
+    margin: 0 auto;
+  }
+  .arch-title {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .arch-subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 28px;
+    font-family: -apple-system, sans-serif;
+  }
+
+  .arch-svg {
+    width: 100%;
+    height: auto;
+  }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* SLIDE 3 — UNDERWRITERS                                  */
+  /* ─────────────────────────────────────────────────────── */
+  #s3 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    max-width: 1100px;
+    width: 100%;
+    align-items: start;
+  }
+
+  .yield-viz {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .yield-bar-track {
+    background: var(--bg);
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+    margin: 8px 0 4px;
+  }
+  .yield-bar {
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--green), #1bbb7e);
+    width: 0;
+    transition: width 1.5s cubic-bezier(.4,0,.2,1);
+  }
+  .yield-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .yield-row .val { color: var(--green); font-weight: 600; }
+
+  /* FIFO Queue */
+  .fifo-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 20px;
+  }
+  .fifo-label {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .queue-track {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .q-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 13px;
+    transition: all 0.4s;
+  }
+  .q-item .q-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+  .q-item .q-info { flex: 1; }
+  .q-item .q-shares { font-size: 11px; color: var(--muted); }
+  .q-item .q-status {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+  .q-item.waiting .q-status { background: rgba(245,200,66,0.1); color: var(--yellow); }
+  .q-item.ready   .q-status { background: rgba(46,204,143,0.12); color: var(--green); }
+  .q-item.done    { opacity: 0.35; }
+  .q-item.done .q-status { background: rgba(90,100,120,0.2); color: var(--muted); }
+
+  .fifo-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px; font-size: 12px; color: var(--muted);
+  }
+  .fifo-head .arrow { color: var(--green); font-size: 14px; }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* SLIDE 4 — DECENTRALIZED + OVERCOLLATERALISED            */
+  /* ─────────────────────────────────────────────────────── */
+  #s4 .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    max-width: 1100px;
+    width: 100%;
+    align-items: start;
+  }
+
+  .solvency-viz {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-top: 20px;
+  }
+  .sol-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-family: -apple-system, sans-serif;
+  }
+  .sol-bar-wrap { flex: 1; background: var(--bg); border-radius: 4px; height: 8px; overflow: hidden; }
+  .sol-bar { height: 100%; border-radius: 4px; transition: width 1.8s cubic-bezier(.4,0,.2,1); }
+  .sol-label { width: 90px; color: var(--muted); font-size: 12px; }
+  .sol-val { width: 60px; text-align: right; font-size: 12px; font-weight: 600; }
+
+  .decen-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .decen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .decen-card .icon { font-size: 22px; margin-bottom: 8px; }
+  .decen-card .title { font-size: 13px; font-weight: 700; color: var(--white); margin-bottom: 4px; font-family: -apple-system, sans-serif; }
+  .decen-card .desc  { font-size: 12px; color: var(--muted); font-family: -apple-system, sans-serif; line-height: 1.5; }
+
+  /* ─────────────────────────────────────────────────────── */
+  /* SLIDE 5 — CRE WORKFLOW                                  */
+  /* ─────────────────────────────────────────────────────── */
+  #s5 { padding: 32px; }
+  .cre-canvas {
+    max-width: 1060px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* ── SVG ANIMATION HELPERS ── */
+  @keyframes dash-flow {
+    to { stroke-dashoffset: -24; }
+  }
+  @keyframes pulse-ring {
+    0%   { r: 10; opacity: 0.8; }
+    100% { r: 22; opacity: 0; }
+  }
+  @keyframes node-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.55; }
+  }
+  @keyframes float-up {
+    0%   { transform: translateY(0);   opacity: 1; }
+    100% { transform: translateY(-28px); opacity: 0; }
+  }
+  @keyframes tick-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes count-up {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .flowing-line {
+    stroke-dasharray: 8 6;
+    animation: dash-flow 0.9s linear infinite;
+  }
+  .flowing-line-slow {
+    stroke-dasharray: 8 6;
+    animation: dash-flow 1.6s linear infinite;
+  }
+
+  /* stat counters animate in */
+  .stat-box { animation: fade-in-up 0.5s both; }
+  .stat-box:nth-child(1) { animation-delay: 0.1s; }
+  .stat-box:nth-child(2) { animation-delay: 0.2s; }
+  .stat-box:nth-child(3) { animation-delay: 0.3s; }
+  .stat-box:nth-child(4) { animation-delay: 0.4s; }
+
+  .slide.active .yield-bar { width: var(--w, 0); }
+  .slide.active .sol-bar   { width: var(--w, 0); }
+</style>
+</head>
+<body>
+
+<div class="logo">SENTINEL <span>PROTOCOL</span></div>
+
+<div class="deck" id="deck">
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- SLIDE 1 — THE PROBLEM                              -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section class="slide active" id="s1">
+    <div class="layout">
+      <div>
+        <div class="tag">The Problem</div>
+        <h1>Flight insurance<br>is broken.</h1>
+        <ul class="problem-list" style="margin-top:28px">
+          <li><div class="icon">✕</div><span>File a claim. Wait weeks. Get denied on a technicality.</span></li>
+          <li><div class="icon">✕</div><span>Insurance companies profit by <strong style="color:var(--white)">not paying</strong> — discretionary judgment replaces contract.</span></li>
+          <li><div class="icon">✕</div><span>No transparency. No auditability. No guarantee.</span></li>
+          <li><div class="icon">✕</div><span>Centralised servers and private keys control every payout.</span></li>
+        </ul>
+        <div class="stat-grid">
+          <div class="stat-box">
+            <div class="num red">20%+</div>
+            <div class="label">of US flights delayed annually</div>
+          </div>
+          <div class="stat-box">
+            <div class="num blue">$700B</div>
+            <div class="label">global travel insurance market</div>
+          </div>
+          <div class="stat-box">
+            <div class="num red">40%</div>
+            <div class="label">claim denial rate on delay claims</div>
+          </div>
+          <div class="stat-box">
+            <div class="num blue">~6 wks</div>
+            <div class="label">average claim resolution time</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="tag green">The Fix</div>
+        <h2>Parametric insurance.<br>On-chain. Automatic.</h2>
+        <ul class="problem-list solution-list" style="margin-top:28px">
+          <li><div class="icon">✓</div><span>Flight delayed? <strong style="color:var(--white)">Payout is automatic.</strong> No claim form.</span></li>
+          <li><div class="icon">✓</div><span>Smart contract code is the policy. Immutable, public, auditable.</span></li>
+          <li><div class="icon">✓</div><span>Chainlink oracle fetches flight data — no human in the loop.</span></li>
+          <li><div class="icon">✓</div><span>100% collateralised at all times, enforced on-chain.</span></li>
+        </ul>
+
+        <div class="card green" style="margin-top:28px; display:flex; align-items:center; gap:16px;">
+          <div style="font-size:28px">✈</div>
+          <div>
+            <div style="font-size:13px; color:var(--white); font-family:-apple-system,sans-serif; font-weight:600">Pay $12 premium → flight AA123 delayed by 50 min</div>
+            <div style="font-size:13px; color:var(--green); font-family:-apple-system,sans-serif; margin-top:4px">→ Receive $150 USDC automatically. No forms. No waiting.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- SLIDE 2 — ARCHITECTURE                             -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section class="slide" id="s2">
+    <div class="arch-canvas">
+      <div class="arch-title">
+        <div class="tag" style="margin-bottom:8px">System Architecture</div>
+        <h2>How it works</h2>
+      </div>
+      <div class="arch-subtitle">Every component on-chain. Every payout automatic.</div>
+
+      <svg class="arch-svg" viewBox="0 0 920 480" fill="none" xmlns="http://www.w3.org/2000/svg" id="arch-svg">
+        <!-- System boundary -->
+        <rect x="120" y="90" width="680" height="350" rx="12"
+              stroke="#1e2530" stroke-width="1.5" stroke-dasharray="6 4" fill="rgba(15,18,24,0.5)"/>
+        <text x="800" y="84" fill="#2a3040" font-size="11" font-family="monospace">on-chain</text>
+
+        <!-- ── CRE Workflow (top centre) ── -->
+        <rect x="340" y="18" width="240" height="56" rx="10"
+              fill="#0d1420" stroke="#375bd2" stroke-width="1.5" id="box-cre"/>
+        <text x="460" y="40" fill="#6a8fd8" font-size="10" font-family="monospace" text-anchor="middle">CHAINLINK CRE</text>
+        <text x="460" y="57" fill="#e8ecf4" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">CRE Workflow</text>
+        <!-- cron badge -->
+        <rect x="348" y="25" width="54" height="16" rx="4" fill="rgba(55,91,210,0.2)"/>
+        <text x="375" y="36" fill="#375bd2" font-size="9" font-family="monospace" text-anchor="middle">⏱ 10 min</text>
+
+        <!-- ── AeroAPI (far right top) ── -->
+        <rect x="780" y="18" width="120" height="56" rx="10"
+              fill="#0d1420" stroke="#2a3040" stroke-width="1.5"/>
+        <text x="840" y="38" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">FLIGHTAWARE</text>
+        <text x="840" y="55" fill="#e8ecf4" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">AeroAPI</text>
+
+        <!-- CRE → AeroAPI -->
+        <path d="M 580 46 L 778 46" stroke="#375bd2" stroke-width="1.5"
+              stroke-dasharray="6 4" marker-end="url(#arr-blue)" class="flowing-line-slow"/>
+        <text x="680" y="40" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">HTTP fetch</text>
+
+        <!-- ── GovernanceModule (top left inside) ── -->
+        <rect x="140" y="108" width="160" height="52" rx="8"
+              fill="#0f1218" stroke="#2a3540" stroke-width="1.5"/>
+        <text x="220" y="127" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">GOVERNANCE</text>
+        <text x="220" y="146" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">GovernanceModule</text>
+
+        <!-- ── Controller (centre) ── -->
+        <rect x="355" y="180" width="210" height="64" rx="10"
+              fill="#12171f" stroke="#e8ecf4" stroke-width="2" id="box-ctrl"/>
+        <text x="460" y="203" fill="#8a93a8" font-size="10" font-family="monospace" text-anchor="middle">ORCHESTRATOR</text>
+        <text x="460" y="224" fill="#e8ecf4" font-size="15" font-family="-apple-system,sans-serif" font-weight="800" text-anchor="middle">Controller</text>
+
+        <!-- ── OracleAggregator (top right inside) ── -->
+        <rect x="620" y="108" width="160" height="52" rx="8"
+              fill="#0f1218" stroke="#375bd2" stroke-width="1.5" id="box-oracle"/>
+        <text x="700" y="127" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">ORACLE REGISTRY</text>
+        <text x="700" y="146" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">OracleAggregator</text>
+
+        <!-- ── FlightPool (bottom left) ── -->
+        <rect x="160" y="305" width="190" height="64" rx="10"
+              fill="rgba(59,142,243,0.07)" stroke="#1a3a6b" stroke-width="2" id="box-fp"/>
+        <text x="255" y="327" fill="#3b8ef3" font-size="10" font-family="monospace" text-anchor="middle">PER-FLIGHT USDC POOL</text>
+        <text x="255" y="348" fill="#e8ecf4" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">FlightPool(s)</text>
+
+        <!-- ── RiskVault (bottom right) ── -->
+        <rect x="570" y="305" width="190" height="64" rx="10"
+              fill="rgba(224,92,107,0.07)" stroke="#5c1a22" stroke-width="2" id="box-rv"/>
+        <text x="665" y="327" fill="#e05c6b" font-size="10" font-family="monospace" text-anchor="middle">UNDERWRITER CAPITAL</text>
+        <text x="665" y="348" fill="#e8ecf4" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">RiskVault</text>
+
+        <!-- ── RecoveryPool (bottom centre) ── -->
+        <rect x="390" y="405" width="140" height="44" rx="8"
+              fill="#0f1218" stroke="#2a3040" stroke-width="1.2"/>
+        <text x="460" y="424" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">EXPIRED CLAIMS</text>
+        <text x="460" y="440" fill="#8a93a8" font-size="12" font-family="-apple-system,sans-serif" font-weight="600" text-anchor="middle">RecoveryPool</text>
+
+        <!-- ── ACTORS (outside) ── -->
+        <!-- Traveler left -->
+        <circle cx="50" cy="337" r="16" fill="rgba(59,142,243,0.1)" stroke="#3b8ef3" stroke-width="1.5"/>
+        <text x="50" y="329" font-size="13" text-anchor="middle">🧑</text>
+        <text x="50" y="343" font-size="9" fill="#3b8ef3" font-family="monospace" text-anchor="middle">✈</text>
+        <text x="50" y="362" fill="#3b8ef3" font-size="11" font-family="-apple-system,sans-serif" text-anchor="middle">Traveler</text>
+
+        <!-- Underwriter right -->
+        <circle cx="870" cy="337" r="16" fill="rgba(224,92,107,0.1)" stroke="#e05c6b" stroke-width="1.5"/>
+        <text x="870" y="329" font-size="13" text-anchor="middle">🏦</text>
+        <text x="870" y="343" font-size="9" fill="#e05c6b" font-family="monospace" text-anchor="middle">$</text>
+        <text x="870" y="362" fill="#e05c6b" font-size="11" font-family="-apple-system,sans-serif" text-anchor="middle">Underwriter</text>
+
+        <!-- ── CONNECTIONS ── -->
+
+        <!-- Governance → Controller (dashed) -->
+        <path d="M 220 160 L 220 212 L 353 212" stroke="#2a3540" stroke-width="1.2"
+              stroke-dasharray="4 3" marker-end="url(#arr-muted)"/>
+        <text x="285" y="206" fill="#3a4555" font-size="9" font-family="monospace" text-anchor="middle">route terms</text>
+
+        <!-- CRE → OracleAggregator (write status) -->
+        <path d="M 580 46 L 700 46 L 700 106" stroke="#375bd2" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-chainlink)" class="flowing-line"/>
+
+        <!-- CRE → Controller (checkAndSettle) -->
+        <path d="M 460 74 L 460 178" stroke="#375bd2" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-chainlink)" class="flowing-line"/>
+        <text x="476" y="135" fill="#375bd2" font-size="9" font-family="monospace">checkAndSettle</text>
+
+        <!-- OracleAggregator → Controller (read status) -->
+        <path d="M 620 134 L 567 212" stroke="#2a3a60" stroke-width="1.2"
+              stroke-dasharray="4 3" marker-end="url(#arr-blue-dim)"/>
+        <text x="604" y="175" fill="#2a3a60" font-size="9" font-family="monospace" text-anchor="middle">status</text>
+
+        <!-- Controller → FlightPool -->
+        <path d="M 410 244 L 255 303" stroke="#3b8ef3" stroke-width="1.8"
+              marker-end="url(#arr-blue-solid)" class="flowing-line"/>
+        <text x="315" y="270" fill="#3b8ef3" font-size="9" font-family="monospace" text-anchor="middle">deploy+settle</text>
+
+        <!-- Controller → RiskVault -->
+        <path d="M 510 244 L 665 303" stroke="#e05c6b" stroke-width="1.8"
+              marker-end="url(#arr-red-solid)" class="flowing-line"/>
+        <text x="598" y="270" fill="#e05c6b" font-size="9" font-family="monospace" text-anchor="middle">lock/payout</text>
+
+        <!-- FlightPool → RiskVault (premiums on-time) -->
+        <path d="M 350 337 L 568 337" stroke="#2ecc8f" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-green)" class="flowing-line-slow"/>
+        <text x="460" y="330" fill="#2ecc8f" font-size="9" font-family="monospace" text-anchor="middle">premiums (on-time)</text>
+
+        <!-- RiskVault → FlightPool (payout delayed) -->
+        <path d="M 568 357 L 350 357" stroke="#e05c6b" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-red)" class="flowing-line-slow"/>
+        <text x="460" y="372" fill="#e05c6b" font-size="9" font-family="monospace" text-anchor="middle">payout (delayed)</text>
+
+        <!-- Traveler → Controller (buyInsurance) -->
+        <path d="M 66 337 L 160 337 L 200 337 L 200 280 L 353 225" stroke="#3b8ef3" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-blue-solid)" class="flowing-line"/>
+        <text x="110" y="325" fill="#3b8ef3" font-size="9" font-family="monospace" text-anchor="middle">premium USDC</text>
+
+        <!-- Traveler ← FlightPool (claim) -->
+        <path d="M 160 361 L 66 361" stroke="#2ecc8f" stroke-width="1.5"
+              stroke-dasharray="4 3" marker-end="url(#arr-green)"/>
+        <text x="110" y="374" fill="#2ecc8f" font-size="9" font-family="monospace" text-anchor="middle">claim()</text>
+
+        <!-- Underwriter → RiskVault -->
+        <path d="M 854 337 L 762 337" stroke="#e05c6b" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#arr-red-solid)" class="flowing-line"/>
+        <text x="810" y="325" fill="#e05c6b" font-size="9" font-family="monospace" text-anchor="middle">deposit USDC</text>
+
+        <!-- Underwriter ← RiskVault (collect) -->
+        <path d="M 762 357 L 854 357" stroke="#f5c842" stroke-width="1.5"
+              stroke-dasharray="4 3" marker-end="url(#arr-yellow)"/>
+        <text x="810" y="374" fill="#f5c842" font-size="9" font-family="monospace" text-anchor="middle">collect()</text>
+
+        <!-- FlightPool → RecoveryPool -->
+        <path d="M 255 369 L 388 422" stroke="#2a3040" stroke-width="1.2"
+              stroke-dasharray="3 3" marker-end="url(#arr-muted)"/>
+        <text x="300" y="408" fill="#3a4555" font-size="9" font-family="monospace" text-anchor="middle">sweepExpired</text>
+
+        <!-- ── ARROWHEAD DEFS ── -->
+        <defs>
+          <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#3b8ef3"/>
+          </marker>
+          <marker id="arr-blue-solid" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#3b8ef3"/>
+          </marker>
+          <marker id="arr-blue-dim" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#2a3a60"/>
+          </marker>
+          <marker id="arr-red" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#e05c6b"/>
+          </marker>
+          <marker id="arr-red-solid" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#e05c6b"/>
+          </marker>
+          <marker id="arr-green" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#2ecc8f"/>
+          </marker>
+          <marker id="arr-yellow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#f5c842"/>
+          </marker>
+          <marker id="arr-chainlink" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#375bd2"/>
+          </marker>
+          <marker id="arr-muted" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#2a3040"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- SLIDE 3 — UNDERWRITERS + FIFO QUEUE               -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section class="slide" id="s3">
+    <div class="layout">
+      <div>
+        <div class="tag red">For Underwriters</div>
+        <h2>Earn yield.<br>No active management.</h2>
+        <p class="lead" style="margin-top:16px">
+          Deposit USDC into the shared RiskVault and receive shares.
+          Every on-time flight returns its premiums to the vault — your share price rises automatically.
+        </p>
+
+        <div class="yield-viz">
+          <div style="font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:14px">Share price growth (on-time flights)</div>
+          <div class="yield-row">
+            <span>Initial deposit</span><span class="val">1.000 USDC/share</span>
+          </div>
+          <div class="yield-bar-track">
+            <div class="yield-bar" style="--w:100%; background:linear-gradient(90deg,#1a3a6b,#3b8ef3)"></div>
+          </div>
+          <div class="yield-row" style="margin-top:2px">
+            <span>After 10 on-time flights</span><span class="val">1.043 USDC/share</span>
+          </div>
+          <div class="yield-bar-track">
+            <div class="yield-bar" style="--w:80%"></div>
+          </div>
+          <div class="yield-row" style="margin-top:2px">
+            <span>After 30 on-time flights</span><span class="val">1.131 USDC/share</span>
+          </div>
+          <div class="yield-bar-track">
+            <div class="yield-bar" style="--w:60%; background:linear-gradient(90deg,#0d7a50,#2ecc8f)"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:16px">
+          <div>
+            <div style="font-size:11px; color:var(--muted)">Premium per policy</div>
+            <div style="font-size:18px; font-weight:700; color:var(--blue)">$12 USDC</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--muted)">Payoff per delayed</div>
+            <div style="font-size:18px; font-weight:700; color:var(--red)">$150 USDC</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--muted)">On-time rate (US avg)</div>
+            <div style="font-size:18px; font-weight:700; color:var(--green)">~80%</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:var(--muted)">Expected yield/cycle</div>
+            <div style="font-size:18px; font-weight:700; color:var(--yellow)">~4.3%</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="tag" style="color:var(--yellow)">FIFO Withdrawal Queue</div>
+        <h2>Capital is locked<br>fairly, not arbitrarily.</h2>
+        <p class="lead" style="margin-top:16px">
+          If your withdrawal would breach locked capital, it enters a FIFO queue.
+          After each flight settles, the queue drains in order — first in, first out.
+        </p>
+
+        <div class="fifo-wrap">
+          <div class="fifo-head">
+            <span class="arrow">▶</span>
+            <span>Queue drains after settlement</span>
+          </div>
+          <div class="fifo-label">Withdrawal queue — queueHead pointer advances FIFO</div>
+          <div class="queue-track" id="queue-track">
+            <div class="q-item done" style="opacity:0.3">
+              <div class="q-avatar" style="background:rgba(46,204,143,0.15);color:var(--green)">A</div>
+              <div class="q-info">
+                <div>Alice</div>
+                <div class="q-shares">500 shares → 512 USDC</div>
+              </div>
+              <div class="q-status" style="background:rgba(46,204,143,0.12);color:var(--green)">collected</div>
+            </div>
+            <div class="q-item waiting" id="qi-bob">
+              <div class="q-avatar" style="background:rgba(245,200,66,0.12);color:var(--yellow)">B</div>
+              <div class="q-info">
+                <div>Bob</div>
+                <div class="q-shares">300 shares → queued</div>
+              </div>
+              <div class="q-status">waiting</div>
+            </div>
+            <div class="q-item waiting" id="qi-carol">
+              <div class="q-avatar" style="background:rgba(245,200,66,0.12);color:var(--yellow)">C</div>
+              <div class="q-info">
+                <div>Carol</div>
+                <div class="q-shares">800 shares → queued</div>
+              </div>
+              <div class="q-status">waiting</div>
+            </div>
+            <div class="q-item waiting" id="qi-dave">
+              <div class="q-avatar" style="background:rgba(245,200,66,0.12);color:var(--yellow)">D</div>
+              <div class="q-info">
+                <div>Dave</div>
+                <div class="q-shares">200 shares → queued</div>
+              </div>
+              <div class="q-status">waiting</div>
+            </div>
+          </div>
+          <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); font-family:-apple-system,sans-serif">
+            ↻ <span style="color:var(--green)">Flight AA100 settled OnTime</span> — capital released → queue processes FIFO
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- SLIDE 4 — DECENTRALIZED + OVERCOLLATERALISED       -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section class="slide" id="s4">
+    <div class="layout">
+      <div>
+        <div class="tag green">Overcollateralised</div>
+        <h2>Every policy is<br>100% backed. Always.</h2>
+        <p class="lead" style="margin-top:16px">
+          The solvency check runs before every single purchase.
+          If the vault can't cover the worst-case payout, the purchase reverts — no exceptions.
+        </p>
+
+        <div class="solvency-viz">
+          <div style="font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-bottom:16px">Vault state — 3 active policies</div>
+
+          <div class="sol-row">
+            <div class="sol-label" style="color:var(--white); font-weight:600">Total Assets</div>
+            <div class="sol-bar-wrap"><div class="sol-bar" style="--w:90%; background:#3b8ef3;"></div></div>
+            <div class="sol-val" style="color:var(--blue)">$500</div>
+          </div>
+          <div class="sol-row">
+            <div class="sol-label">Locked (3×$100)</div>
+            <div class="sol-bar-wrap"><div class="sol-bar" style="--w:54%; background:#e05c6b;"></div></div>
+            <div class="sol-val" style="color:var(--red)">$300</div>
+          </div>
+          <div class="sol-row">
+            <div class="sol-label">Free Capital</div>
+            <div class="sol-bar-wrap"><div class="sol-bar" style="--w:36%; background:#2ecc8f;"></div></div>
+            <div class="sol-val" style="color:var(--green)">$200</div>
+          </div>
+
+          <div style="margin-top:16px; padding:12px; background:var(--bg); border-radius:8px; font-size:12px; font-family:monospace; color:var(--muted)">
+            <span style="color:var(--green)">✓ purchase allowed</span>: freeCapital ($200) ≥ newPayoff ($100)<br>
+            <span style="color:var(--red)">✕ purchase blocked</span>: freeCapital ($100) &lt; newPayoff ($100+)
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="tag" style="color:var(--green)">Decentralized</div>
+        <h2>No central server.<br>No private key in prod.</h2>
+        <p class="lead" style="margin-top:16px">
+          The CRE workflow runs on a Decentralized Oracle Network. Every node independently
+          fetches flight data and reaches consensus via BFT — no single point of failure.
+        </p>
+
+        <div class="decen-grid">
+          <div class="decen-card">
+            <div class="icon">🔗</div>
+            <div class="title">Chainlink DON</div>
+            <div class="desc">Workflow deployed across multiple independent nodes. BFT consensus on every oracle write.</div>
+          </div>
+          <div class="decen-card">
+            <div class="icon">📜</div>
+            <div class="title">Immutable Terms</div>
+            <div class="desc">Pool terms locked at deploy. Route updates never retroactively affect existing buyers.</div>
+          </div>
+          <div class="decen-card">
+            <div class="icon">🔐</div>
+            <div class="title">Access Control</div>
+            <div class="desc">Only the CRE forwarder address can write oracles. Only Controller can move capital.</div>
+          </div>
+          <div class="decen-card">
+            <div class="icon">📊</div>
+            <div class="title">Transparent Accounting</div>
+            <div class="desc"><code style="font-size:11px">balanceSanityCheck()</code> exposes any drift between internal counters and actual USDC.</div>
+          </div>
+        </div>
+
+        <div class="card green" style="margin-top:16px; font-size:13px; font-family:-apple-system,sans-serif; line-height:1.6">
+          <span style="color:var(--green); font-weight:600">No FunctionsConsumer. No Automation upkeep. No forwarder wiring.</span><br>
+          <span style="color:var(--muted)">One TypeScript file compiled to WASM replaces all of that.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- SLIDE 5 — HOW CRE WORKS                           -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <section class="slide" id="s5">
+    <div class="cre-canvas">
+      <div style="text-align:center; margin-bottom:20px">
+        <div class="tag" style="color:#375bd2">Chainlink CRE</div>
+        <h2>The engine behind every settlement</h2>
+        <p style="font-size:13px; color:var(--muted); margin-top:6px; font-family:-apple-system,sans-serif">
+          One TypeScript workflow. Compiled to WASM. Deployed to a Decentralized Oracle Network.
+        </p>
+      </div>
+
+      <svg viewBox="0 0 980 390" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto">
+        <defs>
+          <marker id="c-arr-blue" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#375bd2"/>
+          </marker>
+          <marker id="c-arr-green" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#2ecc8f"/>
+          </marker>
+          <marker id="c-arr-white" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#8a93a8"/>
+          </marker>
+          <marker id="c-arr-red" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#e05c6b"/>
+          </marker>
+          <!-- glow filter -->
+          <filter id="glow-blue">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- ── Step labels at top ── -->
+        <text x="60"  y="20" fill="#2a3a60" font-size="10" font-family="monospace" text-anchor="middle">① TRIGGER</text>
+        <text x="240" y="20" fill="#2a3a60" font-size="10" font-family="monospace" text-anchor="middle">② READ CHAIN</text>
+        <text x="490" y="20" fill="#2a3a60" font-size="10" font-family="monospace" text-anchor="middle">③ FETCH API</text>
+        <text x="740" y="20" fill="#2a3a60" font-size="10" font-family="monospace" text-anchor="middle">④ WRITE CHAIN</text>
+        <text x="920" y="20" fill="#2a3a60" font-size="10" font-family="monospace" text-anchor="middle">⑤ SETTLE</text>
+
+        <!-- ── DON cloud background ── -->
+        <rect x="0" y="170" width="980" height="190" rx="12"
+              fill="rgba(55,91,210,0.04)" stroke="#1a2540" stroke-width="1" stroke-dasharray="5 4"/>
+        <text x="490" y="196" fill="#1a2540" font-size="11" font-family="monospace" text-anchor="middle">Decentralized Oracle Network (DON) — 4-of-7 BFT consensus</text>
+
+        <!-- ── DON nodes ── -->
+        <!-- Node 1 -->
+        <rect x="20" y="210" width="68" height="110" rx="8" fill="#0d1020" stroke="#1e2a50" stroke-width="1.2"/>
+        <circle cx="54" cy="235" r="9" fill="rgba(55,91,210,0.2)" stroke="#375bd2" stroke-width="1.2"/>
+        <text x="54" y="239" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">①</text>
+        <text x="54" y="258" fill="#5a6478" font-size="9" font-family="monospace" text-anchor="middle">Node 1</text>
+        <rect x="30" y="265" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="30" y="265" width="38" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="30" y="278" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="30" y="278" width="44" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="30" y="291" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="30" y="291" width="30" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+
+        <!-- Node 2 -->
+        <rect x="102" y="210" width="68" height="110" rx="8" fill="#0d1020" stroke="#1e2a50" stroke-width="1.2"/>
+        <circle cx="136" cy="235" r="9" fill="rgba(55,91,210,0.2)" stroke="#375bd2" stroke-width="1.2"/>
+        <text x="136" y="239" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">②</text>
+        <text x="136" y="258" fill="#5a6478" font-size="9" font-family="monospace" text-anchor="middle">Node 2</text>
+        <rect x="112" y="265" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="112" y="265" width="40" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="112" y="278" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="112" y="278" width="44" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="112" y="291" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="112" y="291" width="36" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+
+        <!-- Node 3 -->
+        <rect x="184" y="210" width="68" height="110" rx="8" fill="#0d1020" stroke="#1e2a50" stroke-width="1.2"/>
+        <circle cx="218" cy="235" r="9" fill="rgba(55,91,210,0.2)" stroke="#375bd2" stroke-width="1.2"/>
+        <text x="218" y="239" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">③</text>
+        <text x="218" y="258" fill="#5a6478" font-size="9" font-family="monospace" text-anchor="middle">Node 3</text>
+        <rect x="194" y="265" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="194" y="265" width="38" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="194" y="278" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="194" y="278" width="42" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+        <rect x="194" y="291" width="48" height="8" rx="3" fill="#0a1028"/>
+        <rect x="194" y="291" width="34" height="8" rx="3" fill="#375bd2" opacity="0.6"/>
+
+        <!-- Node 4 (dim) -->
+        <rect x="266" y="210" width="68" height="110" rx="8" fill="#0a0d16" stroke="#141c2e" stroke-width="1"/>
+        <circle cx="300" cy="235" r="9" fill="rgba(55,91,210,0.07)" stroke="#1a2540" stroke-width="1"/>
+        <text x="300" y="239" fill="#1e2a50" font-size="10" font-family="monospace" text-anchor="middle">④</text>
+        <text x="300" y="258" fill="#2a3040" font-size="9" font-family="monospace" text-anchor="middle">Node 4</text>
+
+        <!-- ── BFT Consensus box ── -->
+        <rect x="358" y="205" width="140" height="120" rx="10"
+              fill="#0a1428" stroke="#375bd2" stroke-width="1.5"/>
+        <text x="428" y="226" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">BFT CONSENSUS</text>
+        <text x="428" y="246" fill="#8a93a8" font-size="11" font-family="-apple-system,sans-serif" text-anchor="middle">4-of-7 nodes agree</text>
+        <!-- checkmarks -->
+        <text x="386" y="268" fill="#2ecc8f" font-size="13">✓</text>
+        <text x="404" y="268" fill="#2ecc8f" font-size="13">✓</text>
+        <text x="422" y="268" fill="#2ecc8f" font-size="13">✓</text>
+        <text x="440" y="268" fill="#2ecc8f" font-size="13">✓</text>
+        <text x="458" y="268" fill="#3a4050" font-size="13">✗</text>
+        <text x="428" y="295" fill="#2ecc8f" font-size="10" font-family="monospace" text-anchor="middle">→ result signed</text>
+        <text x="428" y="310" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">Delayed (62 min)</text>
+
+        <!-- Node arrows → BFT -->
+        <path d="M 90 265 L 356 265" stroke="#375bd2" stroke-width="1"
+              stroke-dasharray="4 3" marker-end="url(#c-arr-blue)" class="flowing-line-slow"/>
+        <path d="M 172 265 L 356 265" stroke="#375bd2" stroke-width="1"
+              stroke-dasharray="4 3" marker-end="url(#c-arr-blue)" class="flowing-line-slow"/>
+        <path d="M 254 265 L 356 265" stroke="#375bd2" stroke-width="1"
+              stroke-dasharray="4 3" marker-end="url(#c-arr-blue)" class="flowing-line-slow"/>
+
+        <!-- ── Cron trigger ── -->
+        <rect x="18" y="50" width="100" height="74" rx="8"
+              fill="#0d1020" stroke="#375bd2" stroke-width="1.2"/>
+        <text x="68" y="72" fill="#375bd2" font-size="20" text-anchor="middle">⏱</text>
+        <text x="68" y="90" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">Cron Trigger</text>
+        <text x="68" y="106" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">every 10 min</text>
+        <!-- pulse ring -->
+        <circle cx="68" cy="82" r="0" fill="none" stroke="#375bd2" stroke-width="1" opacity="0.6">
+          <animate attributeName="r" from="10" to="34" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" from="0.6" to="0" dur="2s" repeatCount="indefinite"/>
+        </circle>
+
+        <!-- Cron → DON nodes -->
+        <path d="M 68 124 L 68 208" stroke="#375bd2" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#c-arr-blue)" class="flowing-line"/>
+
+        <!-- ── OracleAggregator (read) ── -->
+        <rect x="168" y="50" width="140" height="74" rx="8"
+              fill="#0d1020" stroke="#2a3a60" stroke-width="1.2"/>
+        <text x="238" y="72" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">EVM READ</text>
+        <text x="238" y="92" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">getActiveFlights()</text>
+        <text x="238" y="110" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">OracleAggregator</text>
+
+        <!-- read arrow -->
+        <path d="M 118 87 L 166 87" stroke="#375bd2" stroke-width="1.2"
+              marker-end="url(#c-arr-blue)"/>
+
+        <!-- OracleAgg → nodes -->
+        <path d="M 238 124 L 238 160 L 136 208" stroke="#2a3a60" stroke-width="1"
+              stroke-dasharray="4 3" marker-end="url(#c-arr-blue)"/>
+
+        <!-- ── AeroAPI (HTTP) ── -->
+        <rect x="390" y="44" width="200" height="86" rx="8"
+              fill="#0d1020" stroke="#2a3040" stroke-width="1.2"/>
+        <text x="490" y="65" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">HTTP CAPABILITY</text>
+        <text x="490" y="86" fill="#e8ecf4" font-size="13" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">AeroAPI</text>
+        <text x="490" y="104" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">FlightAware flight status</text>
+        <!-- badge -->
+        <rect x="410" y="110" width="80" height="14" rx="4" fill="rgba(46,204,143,0.1)"/>
+        <text x="450" y="120" fill="#2ecc8f" font-size="9" font-family="monospace" text-anchor="middle">delay > 45 min → Delayed</text>
+
+        <!-- nodes → AeroAPI -->
+        <path d="M 218 210 L 218 160 L 388 86" stroke="#5a6478" stroke-width="1"
+              stroke-dasharray="3 3" marker-end="url(#c-arr-white)" class="flowing-line-slow"/>
+        <!-- AeroAPI response label -->
+        <text x="320" y="140" fill="#3a4555" font-size="9" font-family="monospace" text-anchor="middle">HTTP GET per flight</text>
+
+        <!-- ── Write back ── -->
+        <rect x="640" y="50" width="160" height="74" rx="8"
+              fill="#0d1020" stroke="#2a3a60" stroke-width="1.2"/>
+        <text x="720" y="70" fill="#375bd2" font-size="10" font-family="monospace" text-anchor="middle">EVM WRITE</text>
+        <text x="720" y="90" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">updateFlightStatus()</text>
+        <text x="720" y="108" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">OracleAggregator</text>
+
+        <!-- BFT → write arrow -->
+        <path d="M 498 255 L 720 255 L 720 126" stroke="#2ecc8f" stroke-width="1.5"
+              stroke-dasharray="5 3" marker-end="url(#c-arr-green)" class="flowing-line"/>
+        <text x="620" y="248" fill="#2ecc8f" font-size="9" font-family="monospace" text-anchor="middle">consensus result</text>
+
+        <!-- ── checkAndSettle ── -->
+        <rect x="840" y="50" width="132" height="74" rx="8"
+              fill="#0d1020" stroke="#e05c6b" stroke-width="1.2"/>
+        <text x="906" y="70" fill="#e05c6b" font-size="10" font-family="monospace" text-anchor="middle">EVM WRITE</text>
+        <text x="906" y="90" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">checkAndSettle()</text>
+        <text x="906" y="108" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">Controller</text>
+
+        <!-- write → settle -->
+        <path d="M 800 87 L 838 87" stroke="#e05c6b" stroke-width="1.5"
+              marker-end="url(#c-arr-red)"/>
+        <text x="820" y="80" fill="#5a3038" font-size="9" font-family="monospace" text-anchor="middle"></text>
+
+        <!-- ── bottom row: secrets ── -->
+        <rect x="640" y="210" width="160" height="108" rx="8"
+              fill="#0d1020" stroke="#2a3040" stroke-width="1"/>
+        <text x="720" y="230" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">DON SECRETS</text>
+        <text x="720" y="250" fill="#e8ecf4" font-size="12" font-family="-apple-system,sans-serif" font-weight="700" text-anchor="middle">AEROAPI_KEY</text>
+        <text x="720" y="270" fill="#2a3040" font-size="11" font-family="monospace" text-anchor="middle">●●●●●●●●●●●●●●</text>
+        <text x="720" y="292" fill="#5a6478" font-size="9" font-family="monospace" text-anchor="middle">Encrypted at rest.</text>
+        <text x="720" y="306" fill="#5a6478" font-size="9" font-family="monospace" text-anchor="middle">No deployer access.</text>
+
+        <!-- BFT → write secrets link -->
+        <path d="M 498 310 L 638 280" stroke="#1e2540" stroke-width="1"
+              stroke-dasharray="3 4"/>
+
+        <!-- ── snapshot call ── -->
+        <rect x="840" y="180" width="132" height="56" rx="8"
+              fill="#0a1020" stroke="#2a3040" stroke-width="1"/>
+        <text x="906" y="200" fill="#5a6478" font-size="10" font-family="monospace" text-anchor="middle">EVM WRITE</text>
+        <text x="906" y="218" fill="#8a93a8" font-size="11" font-family="-apple-system,sans-serif" font-weight="600" text-anchor="middle">snapshot()</text>
+        <text x="906" y="232" fill="#3a4555" font-size="9" font-family="monospace" text-anchor="middle">RiskVault — daily</text>
+
+        <!-- settle → snapshot -->
+        <path d="M 906 124 L 906 178" stroke="#3a4555" stroke-width="1"
+              stroke-dasharray="3 3" marker-end="url(#c-arr-white)"/>
+
+        <!-- ── WASM badge ── -->
+        <rect x="840" y="268" width="132" height="52" rx="8"
+              fill="#0a0e18" stroke="#1a2030" stroke-width="1"/>
+        <text x="906" y="287" fill="#2a3040" font-size="10" font-family="monospace" text-anchor="middle">COMPILED TO</text>
+        <text x="906" y="305" fill="#e8ecf4" font-size="14" font-family="-apple-system,sans-serif" font-weight="800" text-anchor="middle">TypeScript → WASM</text>
+
+      </svg>
+    </div>
+  </section>
+
+</div><!-- /deck -->
+
+<!-- NAV -->
+<div class="nav">
+  <button class="nav-btn" id="prev-btn">←</button>
+  <div class="nav-dots" id="dots"></div>
+  <button class="nav-btn" id="next-btn">→</button>
+  <div class="slide-counter" id="counter">1 / 5</div>
+</div>
+
+<script>
+  const slides  = Array.from(document.querySelectorAll('.slide'));
+  const dotsEl  = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const total   = slides.length;
+  let current   = 0;
+  let animTimer = null;
+
+  // Build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' active' : '');
+    d.addEventListener('click', () => go(i));
+    dotsEl.appendChild(d);
+  });
+
+  function go(idx) {
+    if (idx === current) return;
+    clearTimeout(animTimer);
+
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exit');
+    const old = current;
+    animTimer = setTimeout(() => slides[old].classList.remove('exit'), 600);
+
+    current = (idx + total) % total;
+    slides[current].classList.add('active');
+
+    dotsEl.querySelectorAll('.dot').forEach((d, i) =>
+      d.classList.toggle('active', i === current));
+    counter.textContent = `${current + 1} / ${total}`;
+
+    onSlideEnter(current);
+  }
+
+  document.getElementById('prev-btn').addEventListener('click', () => go(current - 1));
+  document.getElementById('next-btn').addEventListener('click', () => go(current + 1));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown')  go(current + 1);
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')    go(current - 1);
+  });
+
+  // ── Per-slide enter animations ──
+  function onSlideEnter(idx) {
+    if (idx === 2) animateQueue();
+    if (idx === 3) animateSolvency();
+  }
+
+  // S3: FIFO queue animation
+  let queueAnimating = false;
+  function animateQueue() {
+    if (queueAnimating) return;
+    queueAnimating = true;
+    const items = [
+      document.getElementById('qi-bob'),
+      document.getElementById('qi-carol'),
+      document.getElementById('qi-dave')
+    ];
+    // reset
+    items.forEach(el => {
+      el.classList.remove('ready','done');
+      el.classList.add('waiting');
+      el.querySelector('.q-status').textContent = 'waiting';
+      el.querySelector('.q-status').style.background = 'rgba(245,200,66,0.1)';
+      el.querySelector('.q-status').style.color = 'var(--yellow)';
+      el.style.opacity = '1';
+    });
+
+    let delay = 800;
+    items.forEach((el, i) => {
+      setTimeout(() => {
+        el.classList.remove('waiting');
+        el.classList.add('ready');
+        el.querySelector('.q-status').textContent = 'credited ✓';
+        el.querySelector('.q-status').style.background = 'rgba(46,204,143,0.12)';
+        el.querySelector('.q-status').style.color = 'var(--green)';
+        setTimeout(() => {
+          el.classList.remove('ready');
+          el.classList.add('done');
+          el.style.opacity = '0.3';
+          el.querySelector('.q-status').textContent = 'collected';
+          el.querySelector('.q-status').style.background = 'rgba(90,100,120,0.2)';
+          el.querySelector('.q-status').style.color = 'var(--muted)';
+          if (i === items.length - 1) {
+            setTimeout(() => { queueAnimating = false; animateQueue(); }, 2000);
+          }
+        }, 1200);
+      }, delay);
+      delay += 900;
+    });
+  }
+
+  // S4: Solvency bars animate
+  function animateSolvency() {
+    // bars already handled by CSS transition on .active
+  }
+
+  // Init slide 0
+  onSlideEnter(0);
+</script>
+</body>
+</html>

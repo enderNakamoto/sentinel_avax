@@ -40,6 +40,19 @@ Full contract design, data flows, and access control: [specs/architecture.md](sp
 
 Chainlink CRE workflow design and deployment: [specs/integrations/chainlink_integration.md](specs/integrations/chainlink_integration.md)
 
+### Deployed Contracts — Avalanche Fuji Testnet
+
+All six contracts deployed and verified on 2026-03-09.
+
+| Contract | Address | Explorer |
+|---|---|---|
+| MockUSDC | `0x18975871ab7E57e0f26fdF429592238541051Fb0` | [view ↗](https://testnet.snowscan.xyz/address/0x18975871ab7e57e0f26fdf429592238541051fb0) |
+| GovernanceModule | `0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D` | [view ↗](https://testnet.snowscan.xyz/address/0x30ccf5c0ea4f871398136dd643a0544aba39b26d) |
+| RecoveryPool | `0x981BeeCd15b05A35206cfc44af12373B45613E71` | [view ↗](https://testnet.snowscan.xyz/address/0x981beecd15b05a35206cfc44af12373b45613e71) |
+| OracleAggregator | `0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3` | [view ↗](https://testnet.snowscan.xyz/address/0x14cf0cd23b5a444f1e57765d12f21ee7f1e8a2c3) |
+| RiskVault | `0x3E65cABB59773a7D21132dAAa587E7Fc777d427C` | [view ↗](https://testnet.snowscan.xyz/address/0x3e65cabb59773a7d21132daaa587e7fc777d427c) |
+| Controller | `0xd67c1b05Cdfa20aa23C295a2c24310763fED4888` | [view ↗](https://testnet.snowscan.xyz/address/0xd67c1b05cdfa20aa23c295a2c24310763fed4888) |
+
 ---
 
 ## Key Properties
@@ -54,213 +67,20 @@ Chainlink CRE workflow design and deployment: [specs/integrations/chainlink_inte
 
 ## Testing
 
-### Forge tests (Solidity)
-
-All forge commands run from inside `contracts/`.
-
-```bash
-cd contracts
-
-# Run the full test suite (209 tests across 6 contracts + integration)
-forge test
-
-# Run with gas reporting
-forge test --gas-report
-
-# Run a specific test file
-forge test --match-path test/Integration.t.sol
-
-# Run a specific test by name
-forge test --match-test test_buyInsurance_success -vvvv
-```
-
-### CRE workflow unit tests
-
-Tests for the AeroAPI response parser (`parseFlightUpdate`) run against the mock fixtures in `mock_aero_api/`. No CRE CLI or network connection required.
-
-#### Run all tests
-
-```bash
-cd cre
-npm install   # first time only
-npm test
-```
-
-That's it. Jest picks up `src/flightaware.test.ts` automatically via `jest.config.js`. You should see all 10 tests pass: `ontime-landed`, `delayed-landed`, `cancelled-weather`, `cancelled-mechanical`, `cancelled-unknown`, `inflight-ontime`, `inflight-delayed`, `landed-fallback-runway`, `empty`.
-
-#### Run a single test by name
-
-```bash
-npm test -- --testNamePattern "ontime"
-```
-
-#### Watch mode while editing
-
-```bash
-npm test -- --watch
-```
-
-### CRE workflow local simulation
-
-End-to-end test of the full workflow tick against a local Anvil fork. Requires the [CRE CLI](https://docs.chain.link/cre/getting-started/overview) and an [AeroAPI key](https://flightaware.com/commercial/aeroapi/).
-
-**1. Start an Anvil fork of Fuji**
-
-```bash
-anvil --fork-url $AVAX_FUJI_RPC
-```
-
-**2. Deploy contracts to the local fork**
-
-```bash
-cd contracts
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url http://127.0.0.1:8545 \
-  --broadcast \
-  -vvvv
-```
-
-Note the logged contract addresses.
-
-**3. Update `cre/src/config.ts`** with the deployed addresses and `RPC_URL = "http://127.0.0.1:8545"`.
-
-**4. Run a first simulation pass to get the simulated signer address**
-
-```bash
-cd cre
-cre workflow simulate --target local --trigger-index 0
-```
-
-Read the simulated signer address from the output (labelled something like `workflow signer` or `forwarder`).
-
-**5. Wire the local fork**
-
-```bash
-cast send $ORACLE_AGGREGATOR_ADDRESS \
-  "setOracle(address)" $SIMULATED_SIGNER \
-  --rpc-url http://127.0.0.1:8545 --private-key $PRIVATE_KEY
-
-cast send $CONTROLLER_ADDRESS \
-  "setCreWorkflow(address)" $SIMULATED_SIGNER \
-  --rpc-url http://127.0.0.1:8545 --private-key $PRIVATE_KEY
-```
-
-**6. Seed the fork** (approve a route, deposit USDC as underwriter, buy insurance as traveler)
-
-```bash
-# Approve a route
-cast send $GOVERNANCE_ADDRESS \
-  "approveRoute(string,string,string,uint256,uint256)" \
-  "AA123" "DEN" "SEA" 12000000 150000000 \
-  --rpc-url http://127.0.0.1:8545 --private-key $PRIVATE_KEY
-
-# Confirm one active flight is registered
-cast call $ORACLE_AGGREGATOR_ADDRESS "activeFlightCount()(uint256)" \
-  --rpc-url http://127.0.0.1:8545
-```
-
-**7. Set the AeroAPI secret**
-
-```bash
-cre secrets set AEROAPI_KEY --value "your-aeroapi-key"
-# or: export AEROAPI_KEY=your-aeroapi-key
-```
-
-**8. Run the full simulation**
-
-```bash
-cre workflow simulate --target local --trigger-index 0
-```
-
-Expected output: workflow reads active flights, fetches AeroAPI, writes status updates to OracleAggregator, calls `checkAndSettle()`, calls `snapshot()`. Check `[USER LOG]` lines for per-flight results.
-
-**9. Build the WASM artifact**
-
-```bash
-cre workflow build
-# produces: cre/dist/workflow.wasm
-```
+See [testing.md](testing.md) for:
+- Forge test suite (209 Solidity tests)
+- CRE workflow unit tests (Jest, 10 AeroAPI parser tests)
+- Full local simulation against an Anvil fork
 
 ---
 
-## Deployment
+## Deployment & Installation
 
-All forge commands run from inside `contracts/`. Network config and Routescan verifier are already in `foundry.toml`.
-
-### Prerequisites
-
-```bash
-cp contracts/.env.example contracts/.env
-# Fill in PRIVATE_KEY, SNOWTRACE_API_KEY
-# AVAX_FUJI_RPC defaults to https://api.avax-test.network/ext/bc/C/rpc
-```
-
-### Step 1 — Build & test
-
-```bash
-cd contracts
-forge build
-forge test
-```
-
-### Step 2 — Deploy all contracts (Fuji)
-
-```bash
-forge script script/Deploy.s.sol:DeployScript \
-  --rpc-url avax_fuji \
-  --chain-id 43113 \
-  --broadcast \
-  --verify \
-  --verifier etherscan \
-  --verifier-url https://api.routescan.io/v2/network/testnet/evm/43113/etherscan \
-  --etherscan-api-key $SNOWTRACE_API_KEY \
-  -vvvv
-```
-
-> Add `--slow` if you see nonce errors. The script deploys and wires in a single broadcast — no manual steps needed for the Solidity side.
-
-The script deploys in this order and wires automatically:
-
-| # | Action | Notes |
-|---|---|---|
-| 1 | Deploy `MockUSDC` | testnet stand-in for real USDC |
-| 2 | Deploy `GovernanceModule` | owner = deployer |
-| 3 | Deploy `RecoveryPool` | depends on USDC |
-| 4 | Deploy `OracleAggregator` | no deps at deploy time |
-| 5 | Deploy `RiskVault` | `controller = address(0)` placeholder |
-| 6 | Deploy `Controller` | depends on all above |
-| 7 | `OracleAggregator.setController(controller)` | one-time, locks forever |
-| 8 | `RiskVault.setController(controller)` | one-time, locks forever |
-
-Copy the logged addresses into your `.env` as `ORACLE_AGGREGATOR_ADDRESS` and `CONTROLLER_ADDRESS`.
-
-### Step 3 — Approve routes (cast)
-
-```bash
-cast send $GOVERNANCE_ADDRESS \
-  "approveRoute(string,string,string,uint256,uint256)" \
-  "AA123" "DEN" "SEA" 12000000 150000000 \
-  --rpc-url avax_fuji --private-key $PRIVATE_KEY
-```
-
-Amounts are in USDC units (6 decimals): `12000000` = $12 premium, `150000000` = $150 payoff.
-
-### Step 4 — Wire CRE workflow (after Phase 11)
-
-Once the CRE workflow is deployed and its forwarder address is known:
-
-```bash
-# Add to .env:
-# CRE_WORKFLOW_ADDRESS=<forwarder from `cre workflow info <id>`>
-
-forge script script/WireCRE.s.sol:WireCREScript \
-  --rpc-url avax_fuji \
-  --chain-id 43113 \
-  --broadcast \
-  -vvvv
-```
-
-This calls `OracleAggregator.setOracle(cre)` (one-time, locks forever) and `Controller.setCreWorkflow(cre)` (owner-updatable). After this the system is fully operational.
+See [deploy.md](deploy.md) for step-by-step instructions covering:
+- Deploying all 6 contracts to Fuji with verification
+- Installing and authenticating the CRE CLI
+- Building and deploying the workflow to the DON
+- Wiring the CRE forwarder address into the contracts
 
 ---
 

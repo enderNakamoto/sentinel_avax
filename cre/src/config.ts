@@ -16,15 +16,15 @@ export const AEROAPI_BASE_URL = "https://aeroapi.flightaware.com/aeroapi"
 
 /** OracleAggregator contract address (deployed by Deploy.s.sol) */
 export const ORACLE_AGGREGATOR_ADDRESS =
-  "0x0000000000000000000000000000000000000000" // PLACEHOLDER
+  "0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3" // Fuji testnet
 
 /** Controller contract address (deployed by Deploy.s.sol) */
 export const CONTROLLER_ADDRESS =
-  "0x0000000000000000000000000000000000000000" // PLACEHOLDER
+  "0xd67c1b05Cdfa20aa23C295a2c24310763fED4888" // Fuji testnet
 
 /** RiskVault contract address (deployed by Deploy.s.sol) */
 export const RISK_VAULT_ADDRESS =
-  "0x0000000000000000000000000000000000000000" // PLACEHOLDER
+  "0x3E65cABB59773a7D21132dAAa587E7Fc777d427C" // Fuji testnet
 
 /**
  * CRE network selector name for Avalanche Fuji testnet.

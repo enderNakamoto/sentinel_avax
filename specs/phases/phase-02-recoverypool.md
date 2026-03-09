@@ -1,8 +1,8 @@
 # Phase 2 — RecoveryPool
 
-Status: in_progress
+Status: complete
 Started: 2026-03-08
-Completed: —
+Completed: 2026-03-08
 
 ---
 
@@ -58,6 +58,9 @@ Implemented `contracts/test/RecoveryPool.t.sol` — 6 tests, all passing.
 
 All subtasks complete. Gate condition met. Ready for /complete-phase.
 
+### Session 2026-03-08 — Completed
+Phase validated by user. All gate conditions met.
+
 ---
 
 ## Files Created / Modified
@@ -77,4 +80,20 @@ All subtasks complete. Gate condition met. Ready for /complete-phase.
 
 ## Completion Summary
 
-> Populated by /complete-phase. Do not edit manually.
+**What was built:**
+- `contracts/src/RecoveryPool.sol` — custody-only holding pool for expired traveler payouts; no dependencies on other Sentinel contracts
+- `contracts/test/RecoveryPool.t.sol` — 6 tests covering all subtasks; all passing
+
+**Key decisions locked in:**
+- `_recordDeposit` has no access control — RecoveryPool cannot enumerate FlightPool addresses without a Controller dependency, so any caller can record. False accounting entries are harmless since `withdraw` acts on actual USDC balance.
+- `withdraw` relies on OZ ERC20's built-in insufficient-balance revert — no redundant balance check.
+- `deposits` mapping is `private`; reads go through `depositsFrom()` view.
+- `_` prefix on `_recordDeposit` signals protocol-internal per convention, even though visibility is `external`.
+
+**Files created:**
+- `contracts/src/RecoveryPool.sol`
+- `contracts/test/RecoveryPool.t.sol`
+
+**Next phase awareness:**
+- FlightPool (Phase 6) calls `_recordDeposit(address(this), amount)` after transferring USDC to RecoveryPool in `sweepExpired()` — no wiring needed now.
+- RecoveryPool constructor takes `(address usdcAddress, address initialOwner)` — owner will be the deployer (or a multisig in prod).

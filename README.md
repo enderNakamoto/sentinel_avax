@@ -78,13 +78,27 @@ forge test --match-test test_buyInsurance_success -vvvv
 
 Tests for the AeroAPI response parser (`parseFlightUpdate`) run against the mock fixtures in `mock_aero_api/`. No CRE CLI or network connection required.
 
+#### Run all tests
+
 ```bash
 cd cre
 npm install   # first time only
 npm test
 ```
 
-All 10 cases should pass: `ontime-landed`, `delayed-landed`, `cancelled-weather`, `cancelled-mechanical`, `cancelled-unknown`, `inflight-ontime`, `inflight-delayed`, `landed-fallback-runway`, `empty`.
+That's it. Jest picks up `src/flightaware.test.ts` automatically via `jest.config.js`. You should see all 10 tests pass: `ontime-landed`, `delayed-landed`, `cancelled-weather`, `cancelled-mechanical`, `cancelled-unknown`, `inflight-ontime`, `inflight-delayed`, `landed-fallback-runway`, `empty`.
+
+#### Run a single test by name
+
+```bash
+npm test -- --testNamePattern "ontime"
+```
+
+#### Watch mode while editing
+
+```bash
+npm test -- --watch
+```
 
 ### CRE workflow local simulation
 

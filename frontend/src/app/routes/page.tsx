@@ -178,7 +178,7 @@ function RouteCard({ route, walletAddress }: { route: Route; walletAddress: Addr
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            min={new Date().toISOString().split('T')[0]}
+            min={new Date(Date.now() - 86400000).toISOString().split('T')[0]}
             className="w-full"
           />
         </div>

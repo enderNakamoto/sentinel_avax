@@ -8,6 +8,34 @@ The frontend handles all user-facing actions (deposit, buy insurance, claim, col
 
 ---
 
+## Environment setup
+
+All `cast` commands in this playbook read from `contracts/.env`. Load it once at the start of each terminal session:
+
+```bash
+# From project root
+set -a; source contracts/.env; set +a
+```
+
+`set -a` exports every variable so `cast` subprocesses can read them. Run this again if you open a new terminal tab.
+
+### contracts/.env — current Fuji values
+
+```
+PRIVATE_KEY=0x...                    # deployer private key
+AVAX_FUJI_RPC=https://api.avax-test.network/ext/bc/C/rpc
+
+MOCK_USDC_ADDRESS=0x18975871ab7E57e0f26fdF429592238541051Fb0
+GOVERNANCE_ADDRESS=0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D
+ORACLE_AGGREGATOR_ADDRESS=0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3
+RISK_VAULT_ADDRESS=0x3E65cABB59773a7D21132dAAa587E7Fc777d427C
+CONTROLLER_ADDRESS=0xd67c1b05Cdfa20aa23C295a2c24310763fED4888
+
+WORKFLOW_SIGNER_ADDRESS=0x...        # fill in before Stage 2 (see step 2b)
+```
+
+---
+
 ## Stage 1 — Test Suite Green
 
 Verify all tests pass locally before touching testnet. Run the three suites in parallel.
@@ -60,26 +88,19 @@ Admin setup is done via `cast` (mint USDC, approve route, wire EOA). Everything 
 
 ### Prerequisites
 
-- `contracts/.env` filled with deployed addresses and deployer private key
-- `centralized_cron/.env` configured (see step 2e below)
-- Deployer and workflow wallets funded with Fuji AVAX — [core.app/tools/testnet-faucet](https://core.app/tools/testnet-faucet)
+- `contracts/.env` filled (all addresses present, `PRIVATE_KEY` set)
+- `centralized_cron/.env` configured (see step 2i below)
+- Deployer and workflow signer wallets funded with Fuji AVAX — [core.app/tools/testnet-faucet](https://core.app/tools/testnet-faucet)
 - AeroAPI key active
 - Wallet connected to MetaMask / any injected wallet, pointed at **Avalanche Fuji (chain ID 43113)**
 
-### Deployed contract addresses (Fuji testnet)
-
-```
-MOCK_USDC=0x18975871ab7E57e0f26fdF429592238541051Fb0
-GOVERNANCE=0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D
-ORACLE_AGG=0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3
-RISK_VAULT=0x3E65cABB59773a7D21132dAAa587E7Fc777d427C
-CONTROLLER=0xd67c1b05Cdfa20aa23C295a2c24310763fED4888
-RPC=https://api.avax-test.network/ext/bc/C/rpc
-```
-
----
-
 ### Admin setup (cast — one-time)
+
+Load the env if you haven't already:
+
+```bash
+set -a; source contracts/.env; set +a
+```
 
 #### 2a. Pick a real flight with a known outcome
 
@@ -87,61 +108,74 @@ Find a flight that **already landed or was cancelled today** — AeroAPI returns
 
 Check [flightaware.com](https://flightaware.com) for a major hub route flown earlier today (e.g. `AA1` JFK→LAX, `UA200` ORD→LAX, `DL400` ATL→LAX). Note the **IATA flight ID** and **departure date** in `YYYY-MM-DD` format.
 
-#### 2b. Wire the workflow EOA (skip if already done)
+#### 2b. Pick a workflow signer wallet and fill WORKFLOW_SIGNER_ADDRESS
 
-Pick one wallet to act as the "workflow signer" for the cron and fund it with Fuji AVAX.
+Choose a wallet to act as the "workflow signer" for the cron and fund it with Fuji AVAX. Add its address to `contracts/.env`:
 
-```bash
-export DEPLOYER_KEY=0x...     # deployer private key
-export WORKFLOW_EOA=0x...     # address of the workflow signer wallet
-
-# Trust the workflow EOA to write oracle statuses
-cast send $ORACLE_AGG \
-  "setOracle(address)" $WORKFLOW_EOA \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
-
-# Trust the workflow EOA to call checkAndSettle()
-cast send $CONTROLLER \
-  "setCreWorkflow(address)" $WORKFLOW_EOA \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+WORKFLOW_SIGNER_ADDRESS=0x<address of the workflow signer wallet>
 ```
 
-#### 2c. Approve the route in GovernanceModule
+The matching private key goes in `centralized_cron/.env` as `WORKFLOW_PRIVATE_KEY`.
+
+Re-source the env after editing:
+
+```bash
+set -a; source contracts/.env; set +a
+```
+
+#### 2c. Wire the workflow signer on-chain
+
+```bash
+# Trust the workflow signer to write oracle statuses (one-time setter)
+cast send $ORACLE_AGGREGATOR_ADDRESS \
+  "setOracle(address)" $WORKFLOW_SIGNER_ADDRESS \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+# Trust the workflow signer to call checkAndSettle() (owner-updatable)
+cast send $CONTROLLER_ADDRESS \
+  "setCreWorkflow(address)" $WORKFLOW_SIGNER_ADDRESS \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+```
+
+#### 2d. Approve the route in GovernanceModule
+
+Replace `AA1`, `JFK`, `LAX` with the flight you picked in step 2a.
 
 ```bash
 # premium = $10 USDC (10_000_000), payoff = $50 USDC (50_000_000)
-cast send $GOVERNANCE \
+cast send $GOVERNANCE_ADDRESS \
   "approveRoute(string,string,string,uint256,uint256)" \
   "AA1" "JFK" "LAX" 10000000 50000000 \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 ```
 
-#### 2d. Mint MockUSDC to demo wallets
+#### 2e. Mint MockUSDC to demo wallets
 
 ```bash
 export UNDERWRITER=0x...   # wallet that will deposit into the vault
 export TRAVELER=0x...      # wallet that will buy insurance
 
 # Mint 1000 USDC to the underwriter
-cast send $MOCK_USDC \
+cast send $MOCK_USDC_ADDRESS \
   "mint(address,uint256)" $UNDERWRITER 1000000000 \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 
 # Mint 50 USDC to the traveler
-cast send $MOCK_USDC \
+cast send $MOCK_USDC_ADDRESS \
   "mint(address,uint256)" $TRAVELER 50000000 \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 ```
 
 ---
 
 ### Underwriter flow — frontend
 
-#### 2e. Connect wallet as underwriter
+#### 2f. Connect wallet as underwriter
 
 Open the frontend and click **Connect Wallet** in the top-right. Select the underwriter wallet (the one you just minted 1000 USDC to). Confirm the network is **Avalanche Fuji**.
 
-#### 2f. Deposit into the vault
+#### 2g. Deposit into the vault
 
 Navigate to **Vault** (`/vault`).
 
@@ -155,11 +189,11 @@ Navigate to **Vault** (`/vault`).
 
 ### Traveler flow — frontend
 
-#### 2g. Connect wallet as traveler
+#### 2h. Connect wallet as traveler
 
 Switch to the traveler wallet in MetaMask (or open an incognito window and connect the traveler wallet).
 
-#### 2h. Buy insurance
+#### 2i. Buy insurance
 
 Navigate to **Routes** (`/routes`).
 
@@ -175,18 +209,18 @@ Navigate to **Routes** (`/routes`).
 
 ### Settlement — centralized cron
 
-#### 2i. Configure and run a single tick
+#### 2j. Configure and run a single tick
 
 ```bash
 cd centralized_cron
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `centralized_cron/.env`:
 
 ```
 AVAX_FUJI_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
-WORKFLOW_PRIVATE_KEY=0x...      # private key for the workflow signer EOA
+WORKFLOW_PRIVATE_KEY=0x...      # private key for the workflow signer wallet from step 2b
 ORACLE_AGGREGATOR_ADDRESS=0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3
 CONTROLLER_ADDRESS=0xd67c1b05Cdfa20aa23C295a2c24310763fED4888
 AEROAPI_KEY=your-aeroapi-key-here
@@ -212,7 +246,7 @@ checkAndSettle tx: 0x...               → Controller settles all registered fli
 
 ### Post-settlement — frontend
 
-#### 2j. Dashboard updates
+#### 2k. Dashboard updates
 
 Navigate to **Dashboard** (`/`). Observe:
 
@@ -221,7 +255,7 @@ Navigate to **Dashboard** (`/`). Observe:
 - **Vault TVL** — if on-time, increased by $10 (premium flowed to vault)
 - **Active Flights** table — the flight now shows its final oracle status badge (On Time / Delayed / Cancelled)
 
-#### 2k. Traveler claims payout (if delayed or cancelled)
+#### 2l. Traveler claims payout (if delayed or cancelled)
 
 Still connected as the traveler, navigate to **Policies** (`/policies`).
 
@@ -229,7 +263,7 @@ Still connected as the traveler, navigate to **Policies** (`/policies`).
 2. Click **Claim Payout** → sign the transaction.
 3. Wallet receives `$50 USDC` automatically. Balance updates in the top nav.
 
-#### 2l. Underwriter collects (if on-time)
+#### 2m. Underwriter collects (if on-time)
 
 Switch back to the underwriter wallet, navigate to **Vault** (`/vault`).
 
@@ -251,9 +285,15 @@ Arm the system with the real Chainlink CRE workflow. Register a series of flight
 - CRE CLI installed and authenticated (Early Access required for DON deployment)
 - AeroAPI key active
 - 2–3 real flights identified with known or predictable outcomes — check today's completed flights at [flightaware.com](https://flightaware.com)
-- Vault seeded with underwriter capital (carry over from Stage 2 or repeat steps 2e–2f)
+- Vault seeded with underwriter capital (carry over from Stage 2 or repeat steps 2f–2g)
 
 ### Admin setup (cast + CRE CLI — one-time)
+
+Load the env:
+
+```bash
+set -a; source contracts/.env; set +a
+```
 
 #### 3a. Install and authenticate the CRE CLI
 
@@ -307,41 +347,75 @@ cre workflow activate <workflow-id>
 
 ```bash
 cre workflow info <workflow-id>
-# copy the "forwarder" / "signer" address
+# copy the "forwarder" / "signer" address shown in the output
 ```
 
+Set the forwarder address in `contracts/.env`:
+
+```
+WORKFLOW_SIGNER_ADDRESS=0x<forwarder address from above>
+```
+
+Re-source the env:
+
 ```bash
-CRE_FORWARDER=0x...   # forwarder address from above
+set -a; source contracts/.env; set +a
+```
 
-# Wire OracleAggregator to trust the CRE forwarder as oracle writer.
-# NOTE: setOracle is a one-time setter. If already set to the Stage 2 cron EOA,
-# redeploy OracleAggregator fresh, or reuse the cron EOA as the demo
-# source — both call the same on-chain interfaces.
-cast send $ORACLE_AGG \
-  "setOracle(address)" $CRE_FORWARDER \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+Wire the contracts:
 
-# Wire Controller (owner-updatable, safe to re-run)
-cast send $CONTROLLER \
-  "setCreWorkflow(address)" $CRE_FORWARDER \
-  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```bash
+# NOTE: setOracle is a one-time setter.
+# If it was already set to the Stage 2 cron EOA, you have two options:
+#   a) Redeploy OracleAggregator fresh and update contracts/.env accordingly.
+#   b) Use the same cron EOA for Stage 3 by keeping WORKFLOW_SIGNER_ADDRESS
+#      as the cron wallet and pointing the CRE forwarder to match it.
+
+cast send $ORACLE_AGGREGATOR_ADDRESS \
+  "setOracle(address)" $WORKFLOW_SIGNER_ADDRESS \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+# setCreWorkflow is owner-updatable — safe to re-run
+cast send $CONTROLLER_ADDRESS \
+  "setCreWorkflow(address)" $WORKFLOW_SIGNER_ADDRESS \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 ```
 
 #### 3g. Approve routes and mint USDC for multiple travelers
 
 ```bash
+export TRAVELER_1=0x...
+export TRAVELER_2=0x...
+export TRAVELER_3=0x...
+
 # Approve three routes (replace flight IDs with actual flights from today)
-cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
-  "AA1"   "JFK" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
-cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
-  "UA200" "ORD" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
-cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
-  "DL400" "ATL" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $GOVERNANCE_ADDRESS \
+  "approveRoute(string,string,string,uint256,uint256)" \
+  "AA1" "JFK" "LAX" 10000000 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+cast send $GOVERNANCE_ADDRESS \
+  "approveRoute(string,string,string,uint256,uint256)" \
+  "UA200" "ORD" "LAX" 10000000 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+cast send $GOVERNANCE_ADDRESS \
+  "approveRoute(string,string,string,uint256,uint256)" \
+  "DL400" "ATL" "LAX" 10000000 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 
 # Mint 50 USDC to each traveler wallet
-cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_1 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
-cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_2 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
-cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_3 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $MOCK_USDC_ADDRESS \
+  "mint(address,uint256)" $TRAVELER_1 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+cast send $MOCK_USDC_ADDRESS \
+  "mint(address,uint256)" $TRAVELER_2 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
+
+cast send $MOCK_USDC_ADDRESS \
+  "mint(address,uint256)" $TRAVELER_3 50000000 \
+  --rpc-url $AVAX_FUJI_RPC --private-key $PRIVATE_KEY
 ```
 
 ---
@@ -467,10 +541,11 @@ cre workflow info <workflow-id>
 
 | Item | Notes |
 |---|---|
+| `contracts/.env` fully filled | all addresses + `PRIVATE_KEY` + `WORKFLOW_SIGNER_ADDRESS` |
 | Fuji AVAX in deployer wallet | [core.app/tools/testnet-faucet](https://core.app/tools/testnet-faucet) |
 | Fuji AVAX in workflow signer wallet | same faucet |
 | MockUSDC minted to all traveler wallets | step 3g above |
-| AeroAPI key confirmed working | test with a curl to `aeroapi.flightaware.com/aeroapi/flights/AA1` |
+| AeroAPI key confirmed working | test with `curl "https://aeroapi.flightaware.com/aeroapi/flights/AA1" -H "x-apikey: $AEROAPI_KEY"` |
 | 2–3 real flights identified with known outcomes | check completed flights at flightaware.com |
 | `centralized_cron/.env` filled and tested | `npm run tick` should run clean |
 | CRE CLI authenticated + Early Access confirmed | `cre auth login && cre workflow list` |

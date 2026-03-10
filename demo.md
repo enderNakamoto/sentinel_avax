@@ -276,62 +276,21 @@ Switch back to the underwriter wallet, navigate to **Vault** (`/vault`).
 
 ---
 
-## Stage 3 — CRE Workflow Simulation
+## Stage 3 — Multi-Flight Scenario
 
-Demonstrate the Chainlink CRE workflow running against live Fuji contracts. CRE is currently in beta — DON deployment is not yet available. Simulation mode runs the full TypeScript workflow locally: it reads real on-chain state, hits the real AeroAPI, and prints exactly what transactions the DON would submit — without broadcasting anything. The actual settlement still happens via the centralized cron.
-
-This proves the CRE integration is correctly written and production-ready for when DON deployment opens.
+Run three flights simultaneously through the full system — one on-time, one delayed, one cancelled. The CRE workflow TypeScript is already proven by the Stage 1 Jest tests. Here we register the flights on-chain, have three traveler wallets buy insurance, and settle everything with a single cron tick.
 
 ### Prerequisites
 
-- CRE CLI installed (no Early Access needed for simulation)
-- `cre/.env` filled with `AEROAPI_KEY` — the only thing simulation needs that isn't in `config.ts`
-- `cre/src/config.ts` already has the correct Fuji addresses hardcoded — no edits needed
+- `contracts/.env` loaded (`set -a; source contracts/.env; set +a`)
+- `centralized_cron/.env` configured (carry over from Stage 2)
 - AeroAPI key active
-- 2–3 real flights with known or predictable outcomes registered (from Stage 2, or new ones below)
+- 2–3 real flights identified with known outcomes — check completed flights at [flightaware.com](https://flightaware.com)
 - Vault seeded with underwriter capital (carry over from Stage 2 or repeat steps 2f–2g)
 
-### One-time setup — do this before the demo
+### Admin setup (cast — one-time)
 
-#### 3a. Install the CRE CLI and log in
-
-```bash
-curl -sSL https://cre.chain.link/install.sh | bash
-cre version
-cre auth login
-```
-
-No Early Access required — simulation works for any authenticated account.
-
-#### 3b. Set the AeroAPI key in `cre/.env`
-
-This is the only env file simulation reads from. `runtime.getSecret("AEROAPI_KEY")` resolves to this value during local simulation.
-
-```bash
-cp cre/.env.example cre/.env
-```
-
-Edit `cre/.env`:
-
-```
-AEROAPI_KEY=your-aeroapi-key-here
-```
-
-#### 3c. Verify `cre/src/config.ts` — no edits needed
-
-These values are already hardcoded for Fuji testnet. Just confirm they look right:
-
-```typescript
-export const ORACLE_AGGREGATOR_ADDRESS = "0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3"
-export const CONTROLLER_ADDRESS        = "0xd67c1b05Cdfa20aa23C295a2c24310763fED4888"
-export const RISK_VAULT_ADDRESS        = "0x3E65cABB59773a7D21132dAAa587E7Fc777d427C"
-export const CHAIN_SELECTOR_NAME       = "avalanche-testnet-fuji"
-export const IS_TESTNET                = true
-```
-
-Nothing to change here. `CHAIN_SELECTOR_NAME` and `IS_TESTNET` are used by the CRE SDK to resolve the correct network for simulation.
-
-#### 3d. Approve routes and mint USDC for multiple travelers
+#### 3a. Approve routes and mint USDC for multiple travelers
 
 ```bash
 export TRAVELER_1=0x...
@@ -374,7 +333,7 @@ cast send $MOCK_USDC_ADDRESS \
 
 Open the frontend. Connect each traveler wallet in turn and buy insurance on their respective route.
 
-#### 3e. Traveler 1 — buy insurance (on-time flight)
+#### 3b. Traveler 1 — buy insurance (on-time flight)
 
 Connect **Traveler 1** wallet. Navigate to **Routes** (`/routes`).
 
@@ -382,7 +341,7 @@ Connect **Traveler 1** wallet. Navigate to **Routes** (`/routes`).
 2. Pick today's departure date.
 3. Approve USDC → Buy Insurance → confirm policy summary.
 
-#### 3f. Traveler 2 — buy insurance (delayed flight)
+#### 3c. Traveler 2 — buy insurance (delayed flight)
 
 Switch to **Traveler 2** wallet. Navigate to **Routes**.
 
@@ -390,7 +349,7 @@ Switch to **Traveler 2** wallet. Navigate to **Routes**.
 2. Pick the departure date.
 3. Approve USDC → Buy Insurance → confirm.
 
-#### 3g. Traveler 3 — buy insurance (cancelled flight)
+#### 3d. Traveler 3 — buy insurance (cancelled flight)
 
 Switch to **Traveler 3** wallet. Navigate to **Routes**.
 
@@ -402,37 +361,11 @@ After all three buys: **Dashboard** shows `Policies Sold: 3` and the Active Flig
 
 ---
 
-### Settlement — CRE simulation + centralized cron
+### Settlement — centralized cron
 
-#### 3h. Run the CRE simulation
+The CRE workflow TypeScript is already validated by the Jest tests in Stage 1. Here we run the centralized cron — which executes the identical logic — to broadcast real transactions to Fuji and settle all three flights.
 
-The simulation runs the full TypeScript workflow locally — reads live on-chain state, hits the real AeroAPI, and prints exactly what transactions the DON would submit. Nothing is broadcast to the chain.
-
-```bash
-cd cre
-cre workflow simulate workflow.ts
-```
-
-Expected output:
-
-```
-[USER LOG] active flights: 3
-[USER LOG] fetching AA1 2026-03-09...     → status: OnTime
-[USER LOG] fetching UA200 2026-03-09...   → status: Delayed
-[USER LOG] fetching DL400 2026-03-09...   → status: Cancelled
-[SIMULATE] EVM write: updateFlightStatus("AA1", "2026-03-09", 1)
-[SIMULATE] EVM write: updateFlightStatus("UA200", "2026-03-09", 2)
-[SIMULATE] EVM write: updateFlightStatus("DL400", "2026-03-09", 3)
-[SIMULATE] EVM write: checkAndSettle()
-[SIMULATE] EVM write: snapshot()
-Simulation complete — no transactions broadcast.
-```
-
-This proves the workflow logic, AeroAPI integration, and EVM write targets are all correct.
-
-#### 3i. Settle on-chain with the centralized cron
-
-Now use the centralized cron to actually broadcast the same transactions:
+#### 3e. Run the cron tick
 
 ```bash
 cd centralized_cron
@@ -451,13 +384,13 @@ checkAndSettle tx: 0x...
 snapshot tx: 0x...
 ```
 
-Settlement is complete. Payouts are **pushed automatically** to traveler wallets during settlement — no claim step required.
+Settlement is complete. Payouts are **pushed automatically** to traveler wallets during `checkAndSettle()` — no claim step required.
 
 ---
 
 ### Post-settlement — frontend
 
-#### 3j. Dashboard — live status updates
+#### 3f. Dashboard — live status updates
 
 Navigate to **Dashboard** (`/`). The Active Flights table refreshes automatically:
 
@@ -467,7 +400,7 @@ Navigate to **Dashboard** (`/`). The Active Flights table refreshes automaticall
 
 Stats: Policies Sold = 3, Premiums Collected = $30, Payouts Distributed = $100. The Settled Flights section shows all three flights.
 
-#### 3k. Delayed and cancelled travelers — payout already received
+#### 3g. Delayed and cancelled travelers — payout already received
 
 Connect **Traveler 2** wallet. Navigate to **Policies** (`/policies`).
 
@@ -479,13 +412,13 @@ Switch to **Traveler 3** wallet. The DL400 card shows the same receipt.
 
 No claim button, no transaction needed. The `_distributePayout()` loop in `FlightPool.settleDelayed/settleCancelled` already transferred USDC directly during the `checkAndSettle()` call.
 
-#### 3l. On-time traveler — no claim
+#### 3h. On-time traveler — no claim
 
 Connect **Traveler 1** wallet. Navigate to **Policies**.
 
 Policy shows as settled with **On Time** — no payout. The $10 premium was credited to the vault.
 
-#### 3m. Underwriter collects premium income
+#### 3i. Underwriter collects premium income
 
 Connect the underwriter wallet. Navigate to **Vault** (`/vault`).
 
@@ -520,9 +453,5 @@ Open [testnet.snowtrace.io](https://testnet.snowtrace.io) and pull up the Contro
 | AeroAPI key confirmed working | `curl "https://aeroapi.flightaware.com/aeroapi/flights/AA1" -H "x-apikey: $AEROAPI_KEY"` |
 | 2–3 real flights identified with known outcomes | check completed flights at flightaware.com |
 | `centralized_cron/.env` filled and tested | `npm run tick` should run clean |
-| `cre/.env` filled with `AEROAPI_KEY` | needed for `cre workflow simulate` |
-| `cre/src/config.ts` verified (addresses + CHAIN_SELECTOR_NAME) | confirm `"avalanche-testnet-fuji"` is present |
-| CRE CLI authenticated | `cre auth login` then `cre version` |
-| `cre workflow simulate workflow.ts` passes clean | run a dry-run before the demo |
 | Frontend open on Vercel | tab ready, wallet pre-connected to Fuji |
-| Routescan tabs open for OracleAggregator + Controller | links in step 3n above |
+| Routescan tabs open for OracleAggregator + Controller | links above |

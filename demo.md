@@ -1,0 +1,479 @@
+# Sentinel Protocol — Demo Playbook
+
+Three stages: verify everything is green locally, run a real flight end-to-end through the centralized cron against Fuji testnet, then arm the system with the real Chainlink CRE workflow and watch a series of flights settle autonomously.
+
+The frontend handles all user-facing actions (deposit, buy insurance, claim, collect). The only `cast` commands are one-time admin setup tasks that the UI doesn't expose (minting MockUSDC, approving routes, wiring the workflow address) — these mirror what a deployer would do before opening the app to users.
+
+**Frontend (live on Vercel):** https://sentinel-avax-7e2l-cbgo86fxd-enders-projects.vercel.app/
+
+---
+
+## Stage 1 — Test Suite Green
+
+Verify all tests pass locally before touching testnet. Run the three suites in parallel.
+
+### 1a. Solidity contracts (Forge)
+
+```bash
+cd contracts
+forge build
+forge test --gas-report
+```
+
+Expected: **209 tests pass** across MockUSDC, RecoveryPool, GovernanceModule, RiskVault, OracleAggregator, FlightPool, Controller, Integration.
+
+Look for: `Test result: ok. 209 passed; 0 failed; 0 skipped`
+
+### 1b. CRE workflow unit tests (Jest)
+
+```bash
+cd cre
+npm install   # first time only
+npm test
+```
+
+Expected: **10 tests pass** — all AeroAPI response fixtures (ontime-landed, delayed-landed, cancelled-weather, cancelled-mechanical, cancelled-unknown, inflight-ontime, inflight-delayed, landed-fallback-runway, empty).
+
+These run against `mock_aero_api/` fixtures — no network connection required.
+
+### 1c. TypeScript build check
+
+```bash
+cd frontend
+npm run build
+
+cd ../centralized_cron
+npm install && npx tsc --noEmit
+```
+
+Expected: Next.js builds clean (5 static routes generated), no TypeScript errors in centralized_cron.
+
+**Checkpoint:** All three pass → move to Stage 2.
+
+---
+
+## Stage 2 — Live Flight Through Centralized Cron
+
+Run a complete end-to-end cycle on Fuji testnet using the centralized cron as the settlement engine. This exercises the full on-chain state machine with a real AeroAPI flight.
+
+Admin setup is done via `cast` (mint USDC, approve route, wire EOA). Everything the user sees — depositing into the vault, buying insurance, claiming a payout — is done through the frontend.
+
+### Prerequisites
+
+- `contracts/.env` filled with deployed addresses and deployer private key
+- `centralized_cron/.env` configured (see step 2e below)
+- Deployer and workflow wallets funded with Fuji AVAX — [core.app/tools/testnet-faucet](https://core.app/tools/testnet-faucet)
+- AeroAPI key active
+- Wallet connected to MetaMask / any injected wallet, pointed at **Avalanche Fuji (chain ID 43113)**
+
+### Deployed contract addresses (Fuji testnet)
+
+```
+MOCK_USDC=0x18975871ab7E57e0f26fdF429592238541051Fb0
+GOVERNANCE=0x30CCF5C0Ea4F871398136DD643A0544Aba39b26D
+ORACLE_AGG=0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3
+RISK_VAULT=0x3E65cABB59773a7D21132dAAa587E7Fc777d427C
+CONTROLLER=0xd67c1b05Cdfa20aa23C295a2c24310763fED4888
+RPC=https://api.avax-test.network/ext/bc/C/rpc
+```
+
+---
+
+### Admin setup (cast — one-time)
+
+#### 2a. Pick a real flight with a known outcome
+
+Find a flight that **already landed or was cancelled today** — AeroAPI returns a final status immediately for completed flights so you don't have to wait for the demo.
+
+Check [flightaware.com](https://flightaware.com) for a major hub route flown earlier today (e.g. `AA1` JFK→LAX, `UA200` ORD→LAX, `DL400` ATL→LAX). Note the **IATA flight ID** and **departure date** in `YYYY-MM-DD` format.
+
+#### 2b. Wire the workflow EOA (skip if already done)
+
+Pick one wallet to act as the "workflow signer" for the cron and fund it with Fuji AVAX.
+
+```bash
+export DEPLOYER_KEY=0x...     # deployer private key
+export WORKFLOW_EOA=0x...     # address of the workflow signer wallet
+
+# Trust the workflow EOA to write oracle statuses
+cast send $ORACLE_AGG \
+  "setOracle(address)" $WORKFLOW_EOA \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+
+# Trust the workflow EOA to call checkAndSettle()
+cast send $CONTROLLER \
+  "setCreWorkflow(address)" $WORKFLOW_EOA \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+
+#### 2c. Approve the route in GovernanceModule
+
+```bash
+# premium = $10 USDC (10_000_000), payoff = $50 USDC (50_000_000)
+cast send $GOVERNANCE \
+  "approveRoute(string,string,string,uint256,uint256)" \
+  "AA1" "JFK" "LAX" 10000000 50000000 \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+
+#### 2d. Mint MockUSDC to demo wallets
+
+```bash
+export UNDERWRITER=0x...   # wallet that will deposit into the vault
+export TRAVELER=0x...      # wallet that will buy insurance
+
+# Mint 1000 USDC to the underwriter
+cast send $MOCK_USDC \
+  "mint(address,uint256)" $UNDERWRITER 1000000000 \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+
+# Mint 50 USDC to the traveler
+cast send $MOCK_USDC \
+  "mint(address,uint256)" $TRAVELER 50000000 \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+
+---
+
+### Underwriter flow — frontend
+
+#### 2e. Connect wallet as underwriter
+
+Open the frontend and click **Connect Wallet** in the top-right. Select the underwriter wallet (the one you just minted 1000 USDC to). Confirm the network is **Avalanche Fuji**.
+
+#### 2f. Deposit into the vault
+
+Navigate to **Vault** (`/vault`).
+
+1. Your MockUSDC balance is shown at the top. Enter `500` USDC in the deposit input.
+2. The UI shows estimated shares to receive at the current share price.
+3. Click **Approve USDC** → sign the approval transaction in your wallet.
+4. Once confirmed, click **Deposit** → sign the deposit transaction.
+5. Share balance updates. TVL on the Dashboard increases to `$500`.
+
+---
+
+### Traveler flow — frontend
+
+#### 2g. Connect wallet as traveler
+
+Switch to the traveler wallet in MetaMask (or open an incognito window and connect the traveler wallet).
+
+#### 2h. Buy insurance
+
+Navigate to **Routes** (`/routes`).
+
+1. Find the route matching the flight you picked in step 2a (e.g. AA1 · JFK → LAX).
+2. Select the departure date in the date picker.
+3. The card shows: premium `$10`, payoff `$50`, buyer count, and solvency status (green = capacity available).
+4. Click **Approve USDC** → sign the approval transaction.
+5. Once confirmed, click **Buy Insurance** → sign the buy transaction.
+6. A success state shows the policy summary: flight, date, pool address, and payoff amount.
+7. The policy is saved to your wallet's localStorage for the Policies page.
+
+---
+
+### Settlement — centralized cron
+
+#### 2i. Configure and run a single tick
+
+```bash
+cd centralized_cron
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```
+AVAX_FUJI_RPC_URL=https://api.avax-test.network/ext/bc/C/rpc
+WORKFLOW_PRIVATE_KEY=0x...      # private key for the workflow signer EOA
+ORACLE_AGGREGATOR_ADDRESS=0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3
+CONTROLLER_ADDRESS=0xd67c1b05Cdfa20aa23C295a2c24310763fED4888
+AEROAPI_KEY=your-aeroapi-key-here
+AEROAPI_BASE_URL=https://aeroapi.flightaware.com/aeroapi
+```
+
+```bash
+npm install   # first time only
+npm run tick
+```
+
+Watch the logs:
+
+```
+Reading active flights...              → getActiveFlights() from OracleAggregator
+Fetching AeroAPI for AA1 / 2026-03-09...
+Derived status: OnTime                 → (or Delayed / Cancelled)
+updateFlightStatus tx: 0x...           → status written on-chain
+checkAndSettle tx: 0x...               → Controller settles all registered flights
+```
+
+---
+
+### Post-settlement — frontend
+
+#### 2j. Dashboard updates
+
+Navigate to **Dashboard** (`/`). Observe:
+
+- **Policies Sold** counter incremented
+- **Premiums Collected** increased by $10
+- **Vault TVL** — if on-time, increased by $10 (premium flowed to vault)
+- **Active Flights** table — the flight now shows its final oracle status badge (On Time / Delayed / Cancelled)
+
+#### 2k. Traveler claims payout (if delayed or cancelled)
+
+Still connected as the traveler, navigate to **Policies** (`/policies`).
+
+1. The settled flight appears as a card showing flight ID, date, payoff amount, and claim expiry.
+2. Click **Claim Payout** → sign the transaction.
+3. Wallet receives `$50 USDC` automatically. Balance updates in the top nav.
+
+#### 2l. Underwriter collects (if on-time)
+
+Switch back to the underwriter wallet, navigate to **Vault** (`/vault`).
+
+1. Share price is slightly higher — premium income accrued.
+2. Enter your share balance in the **Withdraw** tab → click **Withdraw** → sign.
+3. If capital is free (no active locked flights), the **Collect** section appears immediately with `$claimableBalance` ready.
+4. Click **Collect** → sign → USDC lands in wallet.
+
+**Checkpoint:** AeroAPI status flowed through the cron, hit the chain, Controller settled the pool, vault or traveler paid out — all visible through the frontend. Move to Stage 3.
+
+---
+
+## Stage 3 — Full CRE + Testnet Live Scenario
+
+Arm the system with the real Chainlink CRE workflow. Register a series of flights across different outcomes. Let the DON tick autonomously every 10 minutes and watch each flight settle through the frontend.
+
+### Prerequisites
+
+- CRE CLI installed and authenticated (Early Access required for DON deployment)
+- AeroAPI key active
+- 2–3 real flights identified with known or predictable outcomes — check today's completed flights at [flightaware.com](https://flightaware.com)
+- Vault seeded with underwriter capital (carry over from Stage 2 or repeat steps 2e–2f)
+
+### Admin setup (cast + CRE CLI — one-time)
+
+#### 3a. Install and authenticate the CRE CLI
+
+```bash
+curl -sSL https://cre.chain.link/install.sh | bash
+cre version
+cre auth login
+```
+
+Request Early Access at [cre.chain.link](https://cre.chain.link) if not approved yet. Simulation works without approval; DON deployment requires it.
+
+#### 3b. Set the AeroAPI secret in CRE
+
+```bash
+cre secrets set AEROAPI_KEY --value "your-aeroapi-key-here"
+```
+
+The key is stored in the CRE secrets vault and injected at runtime via `runtime.getSecret("AEROAPI_KEY")`. It never appears in logs or transactions.
+
+#### 3c. Update `cre/src/config.ts` with Fuji addresses
+
+```typescript
+export const ORACLE_AGGREGATOR_ADDRESS = "0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3"
+export const CONTROLLER_ADDRESS        = "0xd67c1b05Cdfa20aa23C295a2c24310763fED4888"
+export const RISK_VAULT_ADDRESS        = "0x3E65cABB59773a7D21132dAAa587E7Fc777d427C"
+```
+
+#### 3d. Dry-run simulate against Fuji (optional but recommended)
+
+```bash
+cd cre
+cre workflow simulate --target fuji --trigger-index 0
+```
+
+Runs the full workflow tick against live Fuji contracts without broadcasting. Confirm `[USER LOG]` lines show active flights and AeroAPI responses look correct before deploying.
+
+#### 3e. Build and deploy to the DON
+
+```bash
+cd cre
+cre workflow build
+# produces: cre/dist/workflow.wasm
+
+cre workflow deploy ./dist/workflow.wasm
+# note the Workflow ID printed
+
+cre workflow activate <workflow-id>
+```
+
+#### 3f. Get the forwarder address and wire contracts
+
+```bash
+cre workflow info <workflow-id>
+# copy the "forwarder" / "signer" address
+```
+
+```bash
+CRE_FORWARDER=0x...   # forwarder address from above
+
+# Wire OracleAggregator to trust the CRE forwarder as oracle writer.
+# NOTE: setOracle is a one-time setter. If already set to the Stage 2 cron EOA,
+# redeploy OracleAggregator fresh, or reuse the cron EOA as the demo
+# source — both call the same on-chain interfaces.
+cast send $ORACLE_AGG \
+  "setOracle(address)" $CRE_FORWARDER \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+
+# Wire Controller (owner-updatable, safe to re-run)
+cast send $CONTROLLER \
+  "setCreWorkflow(address)" $CRE_FORWARDER \
+  --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+
+#### 3g. Approve routes and mint USDC for multiple travelers
+
+```bash
+# Approve three routes (replace flight IDs with actual flights from today)
+cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
+  "AA1"   "JFK" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
+  "UA200" "ORD" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $GOVERNANCE "approveRoute(string,string,string,uint256,uint256)" \
+  "DL400" "ATL" "LAX" 10000000 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+
+# Mint 50 USDC to each traveler wallet
+cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_1 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_2 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+cast send $MOCK_USDC "mint(address,uint256)" $TRAVELER_3 50000000 --rpc-url $RPC --private-key $DEPLOYER_KEY
+```
+
+---
+
+### Traveler flow — three wallets, three flights — frontend
+
+Open the frontend. Connect each traveler wallet in turn and buy insurance on their respective route.
+
+#### 3h. Traveler 1 — buy insurance (on-time flight)
+
+Connect **Traveler 1** wallet. Navigate to **Routes** (`/routes`).
+
+1. Select the AA1 (JFK → LAX) route.
+2. Pick today's departure date.
+3. Approve USDC → Buy Insurance → confirm policy summary.
+
+#### 3i. Traveler 2 — buy insurance (delayed flight)
+
+Switch to **Traveler 2** wallet. Navigate to **Routes**.
+
+1. Select the UA200 (ORD → LAX) route.
+2. Pick the departure date.
+3. Approve USDC → Buy Insurance → confirm.
+
+#### 3j. Traveler 3 — buy insurance (cancelled flight)
+
+Switch to **Traveler 3** wallet. Navigate to **Routes**.
+
+1. Select the DL400 (ATL → LAX) route.
+2. Pick the departure date.
+3. Approve USDC → Buy Insurance → confirm.
+
+After all three buys: **Dashboard** shows `Policies Sold: 3` and the Active Flights table lists all three flights with `Unknown` status badges.
+
+---
+
+### Settlement — CRE workflow (autonomous)
+
+#### 3k. Watch the DON tick
+
+```bash
+cre workflow logs <workflow-id>
+```
+
+Every ~10 minutes the workflow fires from the DON:
+
+```
+[USER LOG] active flights: 3
+[USER LOG] fetching AA1 2026-03-09...     → status: OnTime
+[USER LOG] fetching UA200 2026-03-09...   → status: Delayed
+[USER LOG] fetching DL400 2026-03-09...   → status: Cancelled
+updateFlightStatus tx: 0x...  (×3)
+checkAndSettle tx: 0x...
+snapshot tx: 0x...
+```
+
+All transactions originate from the **CRE forwarder address** — not from any EOA you control.
+
+---
+
+### Post-settlement — frontend
+
+#### 3l. Dashboard — live status updates
+
+Navigate to **Dashboard** (`/`). The Active Flights table refreshes automatically:
+
+- AA1 → **On Time** badge (green)
+- UA200 → **Delayed** badge (amber)
+- DL400 → **Cancelled** badge (red)
+
+Stats: Policies Sold = 3, Premiums Collected = $30, Payouts Distributed = $100.
+
+#### 3m. Delayed traveler claims payout
+
+Connect **Traveler 2** wallet. Navigate to **Policies** (`/policies`).
+
+1. UA200 policy card appears with payoff `$50` and claim expiry countdown.
+2. Click **Claim Payout** → sign → `$50 USDC` received.
+
+#### 3n. Cancelled traveler claims payout
+
+Connect **Traveler 3** wallet. Navigate to **Policies**.
+
+1. DL400 policy card appears.
+2. Click **Claim Payout** → sign → `$50 USDC` received.
+
+#### 3o. On-time traveler — no claim
+
+Connect **Traveler 1** wallet. Navigate to **Policies**.
+
+Policy shows as settled with **On Time** — no claim button, no payout. Premium went to the vault.
+
+#### 3p. Underwriter collects premium income
+
+Connect the underwriter wallet. Navigate to **Vault** (`/vault`).
+
+1. TVL has increased — $10 premium from AA1 has been credited to the vault.
+2. Share price is slightly higher than at deposit time.
+3. Enter share amount in **Withdraw** tab → click **Withdraw** → sign.
+4. **Collect** section appears showing `claimableBalance` → click **Collect** → sign.
+5. USDC lands in the underwriter wallet, reflecting the original deposit plus earned premium.
+
+---
+
+### Show the Chainlink provenance on Routescan
+
+Point to the CRE forwarder address in [testnet.snowtrace.io](https://testnet.snowtrace.io). All `updateFlightStatus`, `checkAndSettle`, and `snapshot` calls originate from this address — not from the deployer, not from any user wallet. This is the key Chainlink proof: the settlement is driven by the DON, not by a centralized operator.
+
+| Contract | Routescan |
+|---|---|
+| OracleAggregator | [view ↗](https://testnet.snowtrace.io/address/0x14cf0cd23b5a444f1e57765d12f21ee7f1e8a2c3) |
+| Controller | [view ↗](https://testnet.snowtrace.io/address/0xd67c1b05cdfa20aa23c295a2c24310763fed4888) |
+| RiskVault | [view ↗](https://testnet.snowtrace.io/address/0x3e65cabb59773a7d21132daaa587e7fc777d427c) |
+
+```bash
+# Also confirm via CLI
+cre workflow info <workflow-id>
+```
+
+---
+
+## Day-of Checklist
+
+| Item | Notes |
+|---|---|
+| Fuji AVAX in deployer wallet | [core.app/tools/testnet-faucet](https://core.app/tools/testnet-faucet) |
+| Fuji AVAX in workflow signer wallet | same faucet |
+| MockUSDC minted to all traveler wallets | step 3g above |
+| AeroAPI key confirmed working | test with a curl to `aeroapi.flightaware.com/aeroapi/flights/AA1` |
+| 2–3 real flights identified with known outcomes | check completed flights at flightaware.com |
+| `centralized_cron/.env` filled and tested | `npm run tick` should run clean |
+| CRE CLI authenticated + Early Access confirmed | `cre auth login && cre workflow list` |
+| Frontend open on Vercel | tab ready, wallet pre-connected to Fuji |
+| `cre workflow logs <id>` running in a terminal | shows live DON ticks |
+| Routescan tabs open for OracleAggregator + Controller | links in step 3p |

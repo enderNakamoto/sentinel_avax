@@ -1,5 +1,7 @@
 # Sentinel Protocol
 
+## Demo Video of Chainlink CRE working with our protocol ( deployed on Avax Fuji Testnet) - https://www.loom.com/share/87ae0dc91c86461dab604f13ef665f99
+
 A fully on-chain, parametric flight delay insurance protocol on Avalanche C-Chain.
 
 Travelers pay a fixed USDC premium to insure a specific flight. If the flight is delayed or cancelled, they receive a fixed USDC payout — automatically, with no claim forms and no manual review. Capital is provided by underwriters who deposit USDC into a shared vault and earn yield from premiums on flights that land on time.

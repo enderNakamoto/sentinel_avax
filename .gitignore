@@ -11,9 +11,18 @@ contracts/broadcast/*/dry-run/
 cre/.env
 cre/node_modules/
 cre/dist/
+cre/src/.cre_build_tmp.js
+cre/src/.cre_build_tmp.wasm
+cre/src/.workflow-temp-*.ts
 
 # Frontend
 frontend/.env
 frontend/.env.local
 frontend/node_modules/
 frontend/.next/
+
+# Centralized Cron 
+centralized_cron/.env
+centralized_cron/.env.local
+centralized_cron/node_modules/
+

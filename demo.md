@@ -290,14 +290,14 @@ This is an independent demo. Run it standalone or after Stage 2.
 
 ```
 Your machine
-  └─ cre workflow simulate --target fuji --trigger-index 0 --broadcast
+  └─ cre workflow simulate . --target fuji --trigger-index 0 --broadcast
        ├─ Compiles workflow.ts → WASM (QuickJS runtime)
        ├─ EVM reads  → Fuji testnet (live, real contract state)
        ├─ HTTP fetch → AeroAPI (real flight data)
-       └─ EVM writes → Fuji testnet (broadcast, signed by CRE_SIGNER_PRIVATE_KEY)
+       └─ EVM writes → Fuji testnet (broadcast, signed by CRE_ETH_PRIVATE_KEY)
 ```
 
-The workflow WASM never touches a DON — it runs on localhost. The `--broadcast` flag makes the EVM writes real transactions on Fuji. `msg.sender` on the contracts = the address of `CRE_SIGNER_PRIVATE_KEY`.
+The workflow WASM never touches a DON — it runs on localhost. The `--broadcast` flag makes the EVM writes real transactions on Fuji. `msg.sender` on the contracts = the address of `CRE_ETH_PRIVATE_KEY`.
 
 ---
 
@@ -317,7 +317,7 @@ AEROAPI_KEY=your_flightaware_aeroapi_key_here
 
 # Dedicated CRE signer wallet (a throwaway testnet wallet is fine)
 # This address will be wired as authorizedOracle and creWorkflowAddress
-CRE_SIGNER_PRIVATE_KEY=0x...
+CRE_ETH_PRIVATE_KEY=0x...
 
 # Fuji RPC — used by the CRE CLI for EVM reads and broadcast writes
 AVAX_FUJI_RPC=https://api.avax-test.network/ext/bc/C/rpc
@@ -329,7 +329,7 @@ Derive and export the signer address:
 set -a; source cre/.env; set +a
 set -a; source contracts/.env; set +a
 
-export CRE_SIGNER_ADDRESS=$(cast wallet address --private-key $CRE_SIGNER_PRIVATE_KEY)
+export CRE_SIGNER_ADDRESS=$(cast wallet address --private-key $CRE_ETH_PRIVATE_KEY)
 echo "CRE signer: $CRE_SIGNER_ADDRESS"
 ```
 
@@ -502,12 +502,12 @@ Update `cre/config.fuji.json` if you need a different cron schedule for the demo
 
 ```bash
 cd cre
-npm install   # first time only
+bun install   # first time only — also runs cre-setup (downloads Javy WASM compiler)
 
 # Expose the CRE signer key so the CLI can sign broadcast transactions
-export PRIVATE_KEY=$CRE_SIGNER_PRIVATE_KEY
+export PRIVATE_KEY=$CRE_ETH_PRIVATE_KEY
 
-cre workflow simulate --target fuji --trigger-index 0 --broadcast
+cre workflow simulate . --target fuji --trigger-index 0 --broadcast
 ```
 
 Watch the terminal output — logs are prefixed `[USER LOG]`:
@@ -612,14 +612,15 @@ When this workflow is deployed to a Chainlink DON (Early Access), the same call 
 
 | Item | Notes |
 |---|---|
-| `cre/.env` filled | `AEROAPI_KEY` + `CRE_SIGNER_PRIVATE_KEY` + `AVAX_FUJI_RPC` |
-| `CRE_SIGNER_ADDRESS` derived and funded with Fuji AVAX | `cast wallet address --private-key $CRE_SIGNER_PRIVATE_KEY` |
+| `cre/.env` filled | `AEROAPI_KEY` + `CRE_ETH_PRIVATE_KEY` + `AVAX_FUJI_RPC` |
+| `CRE_SIGNER_ADDRESS` derived and funded with Fuji AVAX | `cast wallet address --private-key $CRE_ETH_PRIVATE_KEY` |
 | `setOracle` called with `CRE_SIGNER_ADDRESS` | step 3b — irreversible, do this first |
 | `setCreWorkflow` called with `CRE_SIGNER_ADDRESS` | step 3b |
 | Three real flights identified (on-time, delayed, cancelled) | check completed flights at flightaware.com |
 | AeroAPI verified returning data for all three flights | `curl` test in step 3c |
 | MockUSDC minted to all three travelers + underwriter | step 3d |
 | CRE CLI installed and authenticated | `cre auth login` |
-| `cre/npm install` done | first-time only |
+| Bun v1.2+ installed | `bun --version` — upgrade if on v1.1.x: `bun upgrade` |
+| `bun install` run inside `cre/` | triggers `cre-setup` (downloads Javy WASM compiler) |
 | Vault seeded with underwriter deposit | step 3e |
 | All three travelers bought insurance | steps 3f–3h |

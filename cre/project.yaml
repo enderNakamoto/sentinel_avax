@@ -1,0 +1,19 @@
+# ==========================================================================
+# CRE PROJECT SETTINGS FILE — Sentinel Protocol
+# ==========================================================================
+# Defines RPC endpoints for each simulation target.
+# Target names here must match the targets defined in workflow.yaml.
+#
+# Usage:
+#   cre workflow simulate . --target local --trigger-index 0
+#   cre workflow simulate . --target fuji  --trigger-index 0 --broadcast
+
+local:
+  rpcs:
+    - chain-name: avalanche-testnet-fuji
+      url: https://api.avax-test.network/ext/bc/C/rpc
+
+fuji:
+  rpcs:
+    - chain-name: avalanche-testnet-fuji
+      url: https://api.avax-test.network/ext/bc/C/rpc

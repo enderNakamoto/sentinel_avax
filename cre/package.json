@@ -4,6 +4,7 @@
   "description": "Chainlink CRE workflow — flight delay insurance settlement via AeroAPI",
   "main": "src/workflow.ts",
   "scripts": {
+    "postinstall": "bun x cre-setup",
     "test": "jest",
     "build": "cre workflow build"
   },

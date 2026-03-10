@@ -1,22 +1,26 @@
-# CRE Workflow configuration for Sentinel Protocol — flight insurance settlement
-#
-# Targets:
-#   local   — Anvil fork of Fuji (http://127.0.0.1:8545), for `cre workflow simulate`
-#   fuji    — Avalanche Fuji testnet, for Phase 10 testnet deployment
+# ==========================================================================
+# CRE WORKFLOW SETTINGS FILE — Sentinel Protocol
+# ==========================================================================
+# Each target is a top-level key. Settings here override project.yaml values.
 #
 # Usage:
-#   cre workflow simulate --target local --trigger-index 0
-#   cre workflow simulate --target fuji  --trigger-index 0 --broadcast
-#   cre workflow build
+#   cre workflow simulate . --target local --trigger-index 0
+#   cre workflow simulate . --target fuji  --trigger-index 0 --broadcast
 
-workflow-artifacts:
-  - artifact-name: wasm
-    workflows:
-      workflow-path: "./src/workflow.ts"
+# ==========================================================================
+local:
+  user-workflow:
+    workflow-name: "sentinel-protocol-local"
+  workflow-artifacts:
+    workflow-path: "./src/workflow.ts"
+    config-path: "./config.local.json"
     secrets-path: "./secrets.yaml"
 
-targets:
-  local:
-    config: "./config.local.json"
-  fuji:
-    config: "./config.fuji.json"
+# ==========================================================================
+fuji:
+  user-workflow:
+    workflow-name: "sentinel-protocol-fuji"
+  workflow-artifacts:
+    workflow-path: "./src/workflow.ts"
+    config-path: "./config.fuji.json"
+    secrets-path: "./secrets.yaml"

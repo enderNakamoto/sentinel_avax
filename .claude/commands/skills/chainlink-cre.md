@@ -459,17 +459,20 @@ cre init
 ### Simulate
 
 ```bash
-# Interactive — prompts for trigger selection
-cre workflow simulate --target local
+# Interactive — prompts for trigger selection (run from inside workflow folder)
+cre workflow simulate . --target local
 
 # Non-interactive — specify trigger index
-cre workflow simulate --target local --trigger-index 0
+cre workflow simulate . --target local --trigger-index 0
 
 # With broadcast (writes to testnet during simulation)
-cre workflow simulate --target fuji --trigger-index 0 --broadcast
+cre workflow simulate . --target fuji --trigger-index 0 --broadcast
+
+# From project root, pass the workflow folder path explicitly
+cre workflow simulate ./cre --target fuji --trigger-index 0 --broadcast
 
 # HTTP trigger workflow
-cre workflow simulate my-workflow --non-interactive \
+cre workflow simulate ./my-workflow --non-interactive \
   --trigger-index 0 \
   --http-payload '{"userId":"123","action":"purchase"}' \
   --target staging-settings
@@ -512,7 +515,7 @@ cre network list   # verify chain selector names before deploying
 ### Deployment flow
 
 1. `cre auth login`
-2. Write and simulate workflow: `cre workflow simulate --target local --trigger-index 0`
+2. Write and simulate workflow: `cre workflow simulate . --target local --trigger-index 0`
 3. `cre secrets set AEROAPI_KEY --value "..."`
 4. `cre workflow build`
 5. `cre workflow deploy ./dist/workflow.wasm` (requires Early Access)

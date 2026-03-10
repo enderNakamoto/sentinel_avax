@@ -14,8 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 const OUTCOME_LABELS: Record<number, string> = {
   0: 'Pending settlement',
   1: 'On Time — no payout',
-  2: 'Delayed — claim available',
-  3: 'Cancelled — claim available',
+  2: 'Delayed — payout sent',
+  3: 'Cancelled — payout sent',
 }
 
 const OUTCOME_COLORS: Record<number, string> = {
@@ -126,7 +126,7 @@ function PolicyCard({
             <span style={{ color: '#5a6478' }}>Payout</span>
             <span className="font-semibold" style={{ color: '#2ecc8f' }}>${formatUsdc(payoff)} USDC</span>
           </div>
-          {expiryDate && (outcome === 2 || outcome === 3) && (
+          {expiryDate && (outcome === 2 || outcome === 3) && !claimed && (
             <div className="flex justify-between">
               <span style={{ color: '#5a6478' }}>Claim deadline</span>
               <span style={{ color: isExpired ? '#e05c6b' : '#e8ecf4' }}>
@@ -152,8 +152,20 @@ function PolicyCard({
               Claimed! ${formatUsdc(payoff)} USDC sent to your wallet.
             </p>
           </div>
+        ) : claimed && (outcome === 2 || outcome === 3) ? (
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ border: '1px solid rgba(46,204,143,0.3)', background: 'rgba(46,204,143,0.08)' }}
+          >
+            <p className="font-medium" style={{ color: '#2ecc8f' }}>
+              ${formatUsdc(payoff)} USDC paid out to your wallet at settlement.
+            </p>
+            <p className="text-xs mt-1" style={{ color: '#5a6478' }}>
+              Payout was sent automatically — check your USDC balance.
+            </p>
+          </div>
         ) : claimed ? (
-          <p className="text-sm" style={{ color: '#5a6478' }}>Already claimed.</p>
+          <p className="text-sm" style={{ color: '#5a6478' }}>Settled.</p>
         ) : canClaim ? (
           <Button
             onClick={handleClaim}
@@ -168,7 +180,9 @@ function PolicyCard({
           <p className="text-sm" style={{ color: '#5a6478' }}>Awaiting flight settlement…</p>
         ) : outcome === 1 ? (
           <p className="text-sm" style={{ color: '#5a6478' }}>Flight landed on time — no payout due.</p>
-        ) : null}
+        ) : (
+          <p className="text-sm" style={{ color: '#5a6478' }}>Loading…</p>
+        )}
 
         {claimError && (
           <p
@@ -222,6 +236,27 @@ export default function PoliciesPage() {
     return Array.from(combined)
   }, [storedPolicies, activePoolAddresses, hasBoughtData])
 
+  // Read outcome + claimed for all pools to split into active vs history
+  const { data: splitData } = useReadContracts({
+    contracts: allPoolAddresses.flatMap((addr) => [
+      { address: addr as Address, abi: flightPoolAbi, functionName: 'outcome' as const },
+      { address: addr as Address, abi: flightPoolAbi, functionName: 'claimed' as const, args: [address as Address] as const },
+    ]),
+    query: { enabled: allPoolAddresses.length > 0 && !!address },
+  })
+
+  const activePolicies = allPoolAddresses.filter((_, i) => {
+    const outcome = Number((splitData?.[i * 2]?.result ?? 0) as number)
+    const isPaid = splitData?.[i * 2 + 1]?.result as boolean | undefined
+    return !((outcome === 2 || outcome === 3) && isPaid === true)
+  })
+
+  const paidHistory = allPoolAddresses.filter((_, i) => {
+    const outcome = Number((splitData?.[i * 2]?.result ?? 0) as number)
+    const isPaid = splitData?.[i * 2 + 1]?.result as boolean | undefined
+    return (outcome === 2 || outcome === 3) && isPaid === true
+  })
+
   if (!address) {
     return (
       <div className="space-y-6" style={{ animation: 'fade-in-up 0.4s ease both' }}>
@@ -234,7 +269,7 @@ export default function PoliciesPage() {
   }
 
   return (
-    <div className="space-y-8" style={{ animation: 'fade-in-up 0.4s ease both' }}>
+    <div className="space-y-10" style={{ animation: 'fade-in-up 0.4s ease both' }}>
       <div>
         <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#e8ecf4' }}>My Policies</h1>
         <p className="mt-1" style={{ color: '#5a6478' }}>
@@ -254,16 +289,47 @@ export default function PoliciesPage() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {allPoolAddresses.map((poolAddr) => (
-            <PolicyCard
-              key={poolAddr}
-              poolAddress={poolAddr}
-              walletAddress={address}
-              onClaimed={() => setClaimedCount((c) => c + 1)}
-            />
-          ))}
-        </div>
+        <>
+          {/* Active policies */}
+          {activePolicies.length > 0 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold" style={{ color: '#e8ecf4' }}>Active Policies</h2>
+                <p className="text-sm" style={{ color: '#5a6478' }}>Policies awaiting settlement or with open claim windows.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {activePolicies.map((poolAddr) => (
+                  <PolicyCard
+                    key={poolAddr}
+                    poolAddress={poolAddr}
+                    walletAddress={address}
+                    onClaimed={() => setClaimedCount((c) => c + 1)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Payout history */}
+          {paidHistory.length > 0 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold" style={{ color: '#e8ecf4' }}>Payout History</h2>
+                <p className="text-sm" style={{ color: '#5a6478' }}>Flights that were delayed or cancelled — USDC paid out to your wallet automatically.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {paidHistory.map((poolAddr) => (
+                  <PolicyCard
+                    key={poolAddr}
+                    poolAddress={poolAddr}
+                    walletAddress={address}
+                    onClaimed={() => setClaimedCount((c) => c + 1)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

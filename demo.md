@@ -305,21 +305,37 @@ cre auth login
 
 Request Early Access at [cre.chain.link](https://cre.chain.link) if not approved yet. Simulation works without approval; DON deployment requires it.
 
-#### 3b. Set the AeroAPI secret in CRE
+#### 3b. Set the AeroAPI key — two places
+
+**For simulation** (`cre workflow simulate`, step 3d) — the CRE SDK reads secrets from `cre/.env`:
+
+```bash
+cp cre/.env.example cre/.env
+# edit cre/.env and set:
+# AEROAPI_KEY=your-aeroapi-key-here
+```
+
+**For DON deployment** — register the key in the CRE secrets vault so the workflow can read it on the DON at runtime:
 
 ```bash
 cre secrets set AEROAPI_KEY --value "your-aeroapi-key-here"
 ```
 
-The key is stored in the CRE secrets vault and injected at runtime via `runtime.getSecret("AEROAPI_KEY")`. It never appears in logs or transactions.
+The key is injected via `runtime.getSecret("AEROAPI_KEY")` and never appears in logs or transactions.
 
-#### 3c. Update `cre/src/config.ts` with Fuji addresses
+#### 3c. Verify `cre/src/config.ts` has the correct values
+
+These values are already set for Fuji testnet — confirm they match before building:
 
 ```typescript
 export const ORACLE_AGGREGATOR_ADDRESS = "0x14cF0CD23B5A444f1e57765d12f21ee7F1e8a2c3"
 export const CONTROLLER_ADDRESS        = "0xd67c1b05Cdfa20aa23C295a2c24310763fED4888"
 export const RISK_VAULT_ADDRESS        = "0x3E65cABB59773a7D21132dAAa587E7Fc777d427C"
+export const CHAIN_SELECTOR_NAME       = "avalanche-testnet-fuji"
+export const IS_TESTNET                = true
 ```
+
+`CHAIN_SELECTOR_NAME` must match the network name shown by `cre network list`. `IS_TESTNET` controls whether the workflow targets Fuji or mainnet — set to `false` only for mainnet deployment.
 
 #### 3d. Dry-run simulate against Fuji (optional but recommended)
 
@@ -548,6 +564,9 @@ cre workflow info <workflow-id>
 | AeroAPI key confirmed working | test with `curl "https://aeroapi.flightaware.com/aeroapi/flights/AA1" -H "x-apikey: $AEROAPI_KEY"` |
 | 2–3 real flights identified with known outcomes | check completed flights at flightaware.com |
 | `centralized_cron/.env` filled and tested | `npm run tick` should run clean |
+| `cre/.env` filled with `AEROAPI_KEY` | needed for `cre workflow simulate` |
+| `cre secrets set AEROAPI_KEY` done | needed for live DON workflow execution |
+| `cre/src/config.ts` verified (addresses + CHAIN_SELECTOR_NAME) | run `cre network list` to confirm selector name |
 | CRE CLI authenticated + Early Access confirmed | `cre auth login && cre workflow list` |
 | Frontend open on Vercel | tab ready, wallet pre-connected to Fuji |
 | `cre workflow logs <id>` running in a terminal | shows live DON ticks |

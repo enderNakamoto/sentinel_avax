@@ -107,12 +107,11 @@ We built an interactive Monte Carlo simulation tool to model underwriter yield a
 - [Interactive Simulation App](https://sentinel-avax-kna3.vercel.app/) — adjust premiums, payouts, policy volume, capital, delay ranges, protocol fee rate, and protocol vault stake in real time.
 - [Quantitative Analysis Documentation](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md) — full methodology, formulas, current limitations, and roadmap for deeper analysis.
 
-**Key findings with default parameters** (π=$20 premium, λ=$100 payout, 10,000 policies, $100K vault capital, 1–20% delay range):
+**Key findings with default parameters** (π=$20 premium, λ=$100 payout, 5000 policies, $250K vault capital, 1–20% delay range):
 
-- **Average underwriter yield: ~96%** across all trials, with a 5th percentile (worst case) of ~+10% and 95th percentile of ~+180%.
-- **100% profit probability** — the vault is profitable in every simulated scenario under these parameters.
+- **Average underwriter yield: ~19%** across all trials, with a 5th percentile (worst case) of ~+1.8% and 95th percentile of ~+36%.
 - **Break-even delay rate: 20%** (p* = π/λ). Historical US flight delay rates average 15–20%, meaning the protocol operates near but within the profitable zone at default pricing.
-- **Protocol earnings** come from two sources: a configurable fee (1–20%) on every premium collected, and yield on the protocol's own capital deposited in the RiskVault. At 5% fee rate with $50K protocol capital, the protocol earns ~$10K in fees plus ~$48K in vault yield per cycle.
+- **Protocol earnings** come from two sources: a configurable fee (1–20%) on every premium collected, and yield on the protocol's own capital deposited in the RiskVault. At 10% fee rate with $50K protocol capital, the protocol earns ~$10K in fees plus ~$47K in vault yield per cycle.
 
 The simulation currently uses a uniform delay distribution. Future iterations will calibrate with historical BTS/AeroAPI data per route, add correlated event modeling for regional disruptions, and simulate multi-period capital rotation for true APY projections. See the [analysis documentation](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md) for the full roadmap.
 
@@ -148,4 +147,3 @@ The parametric insurance market is valued at approximately $16-21 billion in 202
 - **Full transparency:** Every pool, every settlement, every payout is on-chain. Underwriters can verify exactly how their capital is being used.
 - **Shared liquidity pool:** A single RiskVault across all active flights improves capital efficiency compared to per-product silos used by competitors like Etherisc.
 - **No token dependency:** The protocol is designed to be self-sustaining without a governance token from day one.
-

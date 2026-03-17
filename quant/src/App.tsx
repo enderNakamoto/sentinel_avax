@@ -177,12 +177,23 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
 
 export default function App() {
   const [params, setParams] = useState<SimulationParams>(DEFAULT_PARAMS);
+  const [protocolFeeRate, setProtocolFeeRate] = useState(0.05);
+  const [protocolCapital, setProtocolCapital] = useState(50000);
 
   const update = (key: keyof SimulationParams, value: number) => {
     setParams((prev) => ({ ...prev, [key]: value }));
   };
 
   const result = useMemo(() => runSimulation(params), [params]);
+
+  const protocolEarnings = useMemo(() => {
+    const totalPremiums = params.numPolicies * params.premium;
+    const feeIncome = totalPremiums * protocolFeeRate;
+    const vaultYieldPct = result.meanYield / 100;
+    const vaultIncome = protocolCapital * vaultYieldPct;
+    const totalEarnings = feeIncome + vaultIncome;
+    return { totalPremiums, feeIncome, vaultIncome, totalEarnings, vaultYieldPct };
+  }, [params, protocolFeeRate, protocolCapital, result.meanYield]);
 
   const sensitivityPoints = [0.01, 0.03, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30].filter(
     (p) => p <= params.pMax + 0.05
@@ -215,9 +226,9 @@ export default function App() {
           Monte Carlo Simulation
         </h1>
         <p className="text-base md:text-lg text-[#8a93a8] leading-relaxed max-w-2xl">
-          Modeling underwriter yield for parametric flight delay insurance.
-          Adjust the parameters below to explore how premiums, payouts, policy
-          volume, and delay probabilities affect returns.
+          Modeling underwriter yield and protocol earnings for parametric flight
+          delay insurance. Adjust the parameters below to explore how premiums,
+          payouts, policy volume, and delay probabilities affect returns.
         </p>
       </section>
 
@@ -447,6 +458,119 @@ export default function App() {
         </div>
       </section>
 
+      {/* ─── Protocol Earnings Explorer ─── */}
+      <section className="max-w-6xl mx-auto px-6 pb-12">
+        <p className="text-[11px] uppercase tracking-[0.15em] text-[#3b8ef3] mb-4">
+          Protocol Earnings Explorer
+        </p>
+        <div className="rounded-xl border border-[#1e2530] bg-[#0f1218] p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8">
+            {/* Protocol sliders */}
+            <div className="space-y-5">
+              <ParamSlider
+                label="Protocol Fee Rate"
+                value={protocolFeeRate}
+                onChange={setProtocolFeeRate}
+                min={0.01}
+                max={0.20}
+                step={0.01}
+                format={(v) => `${(v * 100).toFixed(0)}%`}
+              />
+              <ParamSlider
+                label="Protocol Capital in Vault"
+                value={protocolCapital}
+                onChange={setProtocolCapital}
+                min={10000}
+                max={500000}
+                step={5000}
+                format={(v) => `$${v.toLocaleString()}`}
+              />
+              <div className="pt-3 border-t border-[#1e2530]">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-xs text-[#5a6478]">Vault Yield (mean)</span>
+                  <span className="text-sm font-mono" style={{ color: result.meanYield >= 0 ? '#2ecc8f' : '#e05c6b' }}>
+                    {result.meanYield >= 0 ? '+' : ''}{result.meanYield.toFixed(1)}%
+                  </span>
+                </div>
+                <p className="text-[10px] text-[#5a6478]">
+                  From Monte Carlo simulation above
+                </p>
+              </div>
+            </div>
+
+            {/* Earnings breakdown */}
+            <div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <StatCard
+                  label="Premium Fee Income"
+                  value={`$${Math.round(protocolEarnings.feeIncome).toLocaleString()}`}
+                  color="#3b8ef3"
+                  subtext={`${(protocolFeeRate * 100).toFixed(0)}% of $${protocolEarnings.totalPremiums.toLocaleString()}`}
+                />
+                <StatCard
+                  label="Vault Yield Income"
+                  value={`${protocolEarnings.vaultIncome >= 0 ? '' : '-'}$${Math.abs(Math.round(protocolEarnings.vaultIncome)).toLocaleString()}`}
+                  color={protocolEarnings.vaultIncome >= 0 ? '#2ecc8f' : '#e05c6b'}
+                  subtext={`${result.meanYield.toFixed(1)}% on $${protocolCapital.toLocaleString()}`}
+                />
+                <StatCard
+                  label="Total Protocol Earnings"
+                  value={`${protocolEarnings.totalEarnings >= 0 ? '' : '-'}$${Math.abs(Math.round(protocolEarnings.totalEarnings)).toLocaleString()}`}
+                  color={protocolEarnings.totalEarnings >= 0 ? '#2ecc8f' : '#e05c6b'}
+                  subtext="Fee + Vault yield"
+                />
+                <StatCard
+                  label="Earnings Split"
+                  value={protocolEarnings.totalEarnings > 0 ? `${((protocolEarnings.feeIncome / protocolEarnings.totalEarnings) * 100).toFixed(0)}% / ${((protocolEarnings.vaultIncome / protocolEarnings.totalEarnings) * 100).toFixed(0)}%` : '—'}
+                  color="#f5c842"
+                  subtext="Fee vs Vault"
+                />
+              </div>
+
+              {/* Visual bar */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] text-[#5a6478] uppercase tracking-wider">
+                  <span>Earnings Composition</span>
+                  <span>
+                    Total: ${Math.abs(Math.round(protocolEarnings.totalEarnings)).toLocaleString()}
+                  </span>
+                </div>
+                {protocolEarnings.totalEarnings > 0 ? (
+                  <div className="h-6 rounded-full bg-[#1e2530] overflow-hidden flex">
+                    <div
+                      className="h-full rounded-l-full transition-all duration-300"
+                      style={{
+                        width: `${(protocolEarnings.feeIncome / protocolEarnings.totalEarnings) * 100}%`,
+                        background: 'rgba(59,142,243,0.6)',
+                      }}
+                    />
+                    <div
+                      className="h-full rounded-r-full transition-all duration-300"
+                      style={{
+                        width: `${(Math.max(0, protocolEarnings.vaultIncome) / protocolEarnings.totalEarnings) * 100}%`,
+                        background: 'rgba(46,204,143,0.6)',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-6 rounded-full bg-[rgba(224,92,107,0.3)]" />
+                )}
+                <div className="flex gap-4 text-[10px]">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[rgba(59,142,243,0.6)]" />
+                    <span className="text-[#5a6478]">Premium Fees</span>
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-2 h-2 rounded-full bg-[rgba(46,204,143,0.6)]" />
+                    <span className="text-[#5a6478]">Vault Yield</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ─── Sensitivity Table ─── */}
       <section className="max-w-6xl mx-auto px-6 pb-12">
         <p className="text-[11px] uppercase tracking-[0.15em] text-[#3b8ef3] mb-4">
@@ -512,24 +636,30 @@ export default function App() {
         <p className="text-[11px] uppercase tracking-[0.15em] text-[#3b8ef3] mb-4">
           Methodology
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormulaCard
-            tag="Expected Yield"
+            tag="Underwriter Yield"
             formula="Yield = M × (π - λ × p) / C × 100%"
-            description="Where M = policies sold, π = premium per policy, λ = payout per claim, p = delay probability, C = underwriter capital."
+            description="Where M = policies sold, π = premium per policy, λ = payout per claim, p = delay probability, C = total vault capital."
             color="#3b8ef3"
+          />
+          <FormulaCard
+            tag="Protocol Earnings"
+            formula="E = f × M × π + Cp × Yield"
+            description="Where f = protocol fee rate (1–20%), M × π = total premiums collected, Cp = protocol's own capital in the vault. The protocol earns from both fees and vault yield."
+            color="#2ecc8f"
           />
           <FormulaCard
             tag="Break-Even Probability"
             formula="p* = π / λ"
-            description="The delay probability at which premiums exactly equal expected payouts. Below this, underwriters profit. Above, they lose."
-            color="#2ecc8f"
+            description="The delay probability at which premiums exactly equal expected payouts. Below this, the vault is profitable. Above, it loses money."
+            color="#f5c842"
           />
           <FormulaCard
             tag="Monte Carlo Method"
             formula="p ~ Uniform(pMin, pMax)"
             description="Each trial draws a random delay probability from the specified range and computes the resulting yield. 10,000 trials produce the distribution above."
-            color="#f5c842"
+            color="#3b8ef3"
           />
         </div>
       </section>
@@ -541,10 +671,16 @@ export default function App() {
         </p>
         <div className="rounded-xl border border-[#1e2530] bg-[#0f1218] p-6 space-y-4">
           <p className="text-sm text-[#8a93a8] leading-relaxed">
-            In parametric flight delay insurance, underwriters pool capital into a shared vault.
+            In parametric flight delay insurance, underwriters pool capital into a shared vault (RiskVault).
             Travelers pay a fixed premium to insure a specific flight. If the flight is delayed
-            beyond the threshold, the traveler receives an automatic payout from the vault.
-            If the flight is on time, the premium flows to underwriters as income.
+            beyond the 45-minute threshold, the traveler receives an automatic payout from the vault.
+            If the flight is on time, the premium flows to the vault as income.
+          </p>
+          <p className="text-sm text-[#8a93a8] leading-relaxed">
+            The <span className="text-[#e8ecf4] font-medium">protocol earns in two ways</span>: a configurable fee
+            (1–20%) on every premium collected, and yield on its own capital deposited in the RiskVault
+            alongside other underwriters. The underwriter yield section above models the vault-wide return;
+            the Protocol Earnings Explorer shows the protocol's combined income from both sources.
           </p>
           <p className="text-sm text-[#8a93a8] leading-relaxed">
             The underwriter's return depends on the <span className="text-[#e8ecf4] font-medium">delay probability</span> across

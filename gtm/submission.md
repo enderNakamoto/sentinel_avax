@@ -18,6 +18,8 @@ Sentinel Protocol is building a **fair, transparent, and decentralized parametri
 
 - [Live Demo](https://sentinel-avax-7e2l.vercel.app/)
 - [GitHub Repository](https://github.com/enderNakamoto/sentinel_avax?tab=readme-ov-file#sentinel-protocol)
+- [Monte Carlo Simulation App](https://sentinel-avax-kna3.vercel.app/) — interactive tool modeling underwriter yield and protocol earnings
+- [Quantitative Analysis Documentation](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md) — methodology, formulas, limitations, and analysis roadmap
 
 
 ## 3. Milestones & Roadmap
@@ -30,15 +32,20 @@ Sentinel Protocol is building a **fair, transparent, and decentralized parametri
 - 100+ whitelisted routes across major US airports
 - Seed underwriter liquidity onboarded
 - Smart contract security audit
-- Detailed analysis on airports and routes with Monte Carlo simulation based on historical data to project underwriter APY
+- Calibrate yield projections with real historical delay data per route and season
+- Publish per-route expected APY to attract underwriter capital
+- Check here for [Full quantitative roadmap](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md#roadmap-better-analysis)
 
 **Q3 2026**
 - Codebase hardening based on audit findings
 - Load testing and scaling to 500+ whitelisted routes
 - Open beta, serving 1,000+ flights
-- AI-driven route whitelisting for dynamic coverage expansion
+- AI-driven route whitelisting informed by quantitative risk models — auto-approve routes where projected yield meets minimum thresholds
 - zkID and zkTLS integration for decentralized KYC and boarding pass verification
 - Dynamic pricing v1 with AI agents adjusting premiums based on historical route data
+- Model how regional disruptions affect multiple routes at once
+- Stress test the vault against extreme scenarios
+- Real-time risk dashboard for underwriters powered by live flight data
 - Target: 500+ policies settled, $500K+ TVL in RiskVault
 
 **Q4 2026**
@@ -95,7 +102,19 @@ The protocol will take a 5-10% fee on every insurance policy sold. This fee is d
 In addition to fees, the protocol deploys its own capital into the RiskVault alongside external underwriters, earning the same yield. Protocol-owned capital is always preferred, meaning it is deployed first and absorbs risk before external underwriter deposits. This aligns the protocol's incentives with its users and generates compounding returns on top of fee revenue.
 
 **Sustainability analysis:**
-A detailed Monte Carlo simulation based on historical flight delay data across major US routes projects underwriter APY and protocol profitability under various market conditions. [Link to analysis: TBD]
+We built an interactive Monte Carlo simulation tool to model underwriter yield and protocol profitability under a range of market conditions. The tool runs 10,000 trials per parameter set, sampling delay probabilities from configurable ranges, and computes yield distributions, break-even thresholds, and protocol earnings.
+
+- [Interactive Simulation App](https://sentinel-avax-kna3.vercel.app/) — adjust premiums, payouts, policy volume, capital, delay ranges, protocol fee rate, and protocol vault stake in real time.
+- [Quantitative Analysis Documentation](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md) — full methodology, formulas, current limitations, and roadmap for deeper analysis.
+
+**Key findings with default parameters** (π=$20 premium, λ=$100 payout, 10,000 policies, $100K vault capital, 1–20% delay range):
+
+- **Average underwriter yield: ~96%** across all trials, with a 5th percentile (worst case) of ~+10% and 95th percentile of ~+180%.
+- **100% profit probability** — the vault is profitable in every simulated scenario under these parameters.
+- **Break-even delay rate: 20%** (p* = π/λ). Historical US flight delay rates average 15–20%, meaning the protocol operates near but within the profitable zone at default pricing.
+- **Protocol earnings** come from two sources: a configurable fee (1–20%) on every premium collected, and yield on the protocol's own capital deposited in the RiskVault. At 5% fee rate with $50K protocol capital, the protocol earns ~$10K in fees plus ~$48K in vault yield per cycle.
+
+The simulation currently uses a uniform delay distribution. Future iterations will calibrate with historical BTS/AeroAPI data per route, add correlated event modeling for regional disruptions, and simulate multi-period capital rotation for true APY projections. See the [analysis documentation](https://github.com/enderNakamoto/sentinel_avax/blob/main/quant/README.md) for the full roadmap.
 
 
 ## 7. Competitive Landscape

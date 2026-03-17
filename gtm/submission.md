@@ -76,6 +76,9 @@ We will deploy Telegram bots that let users check routes, buy coverage, and trac
 **Conference partnerships:**
 We will partner with crypto conference organizers (ETH Global, ETH Denver, Token2049) to offer free flight delay coverage to attendees who join our Discord and engage with the community. This turns every conference into a funnel: attendees experience the product firsthand, join the community, and become organic advocates.
 
+**X (Twitter) presence:**
+We will grow our presence on X to build our waitlist and engage with the crypto travel community. We have not started active growth there yet, but it will be a key channel for announcements, flight delay stories, and driving waitlist signups.
+
 **Ambassador and KOL program:**
 Selected ambassadors and KOLs will receive free insurance credits to share with their audiences. In return, they create content around their experience, whether their flight was on time or delayed, the payout was automatic, and the process was transparent. Ambassadors who actively participate in Discord and drive referrals will receive ongoing coverage credits and early access to new features.
 

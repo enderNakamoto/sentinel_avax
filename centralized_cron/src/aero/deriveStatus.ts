@@ -13,28 +13,34 @@ function minutesBetween(startIso: string | null, endIso: string | null): number 
 /**
  * Derive a protocol-level flight status from an AeroAPI response.
  * Mirrors the rules documented in the specs:
- * - Landed + delay > 45 min  → Delayed
- * - Landed + delay <= 45 min → OnTime
- * - Cancelled                → Cancelled
+ * - Cancelled (status string or boolean)  → Cancelled
+ * - Arrived/Landed + delay > 15 min       → Delayed
+ * - Arrived/Landed + delay <= 15 min      → OnTime
  * - Scheduled / En Route / errors / empty → Unknown
+ *
+ * AeroAPI may return multiple flight entries (e.g. "result unknown" + "Cancelled").
+ * We pick the first entry with a meaningful final status.
  */
 export function deriveStatusFromAeroApi(data: AeroApiResponse | null): LocalFlightStatus {
   if (!data || !Array.isArray(data.flights) || data.flights.length === 0) {
     return LocalFlightStatus.Unknown
   }
 
-  const flight = data.flights[0]
-  const status = (flight.status || '').toLowerCase()
+  // Try each flight entry — AeroAPI sometimes returns a "result unknown" entry first
+  for (const flight of data.flights) {
+    const status = (flight.status || '').toLowerCase()
 
-  if (status.includes('cancelled')) {
-    return LocalFlightStatus.Cancelled
-  }
+    // Check cancelled boolean OR status string
+    if (flight.cancelled || status.includes('cancelled')) {
+      return LocalFlightStatus.Cancelled
+    }
 
-  if (status.includes('landed')) {
-    const delayMinutes = minutesBetween(flight.scheduled_in, flight.actual_in)
-    if (delayMinutes === null) return LocalFlightStatus.Unknown
-    if (delayMinutes > 45) return LocalFlightStatus.Delayed
-    return LocalFlightStatus.OnTime
+    if (status.includes('arrived') || status.includes('landed')) {
+      const delayMinutes = minutesBetween(flight.scheduled_in, flight.actual_in)
+      if (delayMinutes === null) continue
+      if (delayMinutes > 15) return LocalFlightStatus.Delayed
+      return LocalFlightStatus.OnTime
+    }
   }
 
   // Scheduled, En Route, or anything else that is not clearly final

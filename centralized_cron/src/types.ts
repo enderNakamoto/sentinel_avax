@@ -16,6 +16,7 @@ export interface AeroApiFlight {
   scheduled_in: string | null
   actual_in: string | null
   status: string
+  cancelled?: boolean
 }
 
 export interface AeroApiResponse {
